@@ -52,6 +52,12 @@ export interface StatusResponse {
   doc_id: string | null;
 }
 
+export interface RealignDocResponse {
+  doc_id: string;
+  pages_aligned: number;
+  pages_skipped: number;
+}
+
 // Admin upload
 export interface InsertDocReq {
   title: string;
