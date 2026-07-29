@@ -31,6 +31,7 @@ function ReaderSession({
     pageNumber,
     pagesTotal,
     pageText,
+    hasText,
     cursor,
     canGoNext,
     mismatch,
@@ -82,7 +83,11 @@ function ReaderSession({
       </div>
 
       <div className="reader-text arabic-text" dir="auto">
-        {highlightedWords}
+        {hasText ? (
+          highlightedWords
+        ) : (
+          <p className="hint">No reading text on this page — continue when ready.</p>
+        )}
       </div>
 
       {mismatch && (
@@ -101,14 +106,16 @@ function ReaderSession({
       )}
 
       <div className="reader-controls">
-        <button
-          type="button"
-          className={`btn ${recording ? "btn-danger" : "btn-primary"}`}
-          onClick={handleRecord}
-          disabled={phase === "processing" || !connected}
-        >
-          {recording ? "Stop" : phase === "retry" ? "Try again" : "Record"}
-        </button>
+        {hasText && (
+          <button
+            type="button"
+            className={`btn ${recording ? "btn-danger" : "btn-primary"}`}
+            onClick={handleRecord}
+            disabled={phase === "processing" || !connected}
+          >
+            {recording ? "Stop" : phase === "retry" ? "Try again" : "Record"}
+          </button>
+        )}
 
         <button type="button" className="btn" onClick={goNextPage} disabled={!canGoNext}>
           Next page

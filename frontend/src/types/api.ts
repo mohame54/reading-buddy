@@ -30,6 +30,7 @@ export interface PageSummary {
   page_number: number;
   content: string;
   audio_url: string | null;
+  has_text?: boolean;
 }
 
 export interface PageDetailResponse {
@@ -40,6 +41,7 @@ export interface PageDetailResponse {
   content_aligned: string | null;
   audio_gcs_uri: string;
   audio_url: string | null;
+  has_text?: boolean;
 }
 
 export interface StatusResponse {
@@ -56,7 +58,7 @@ export interface InsertDocReq {
   content: string;
   pages: {
     text: string;
-    audio: string;
+    audio?: string | null;
   }[];
 }
 
@@ -100,7 +102,14 @@ export type ClientMessage =
   | { type: "end" };
 
 export type ServerMessage =
-  | { type: "page"; doc_id: string; page_number: number; content: string; pages_total: number }
+  | {
+      type: "page";
+      doc_id: string;
+      page_number: number;
+      content: string;
+      pages_total: number;
+      has_text?: boolean;
+    }
   | { type: "ok"; cursor: number }
   | { type: "feedback"; mismatches: WordMismatch[]; cursor: number }
   | { type: "page_complete"; page_number: number; cursor: number }

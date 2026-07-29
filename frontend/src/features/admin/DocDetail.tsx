@@ -73,17 +73,25 @@ export function DocDetail() {
 
             <h2>Pages</h2>
             <div className="page-list">
-              {doc.pages.map((page) => (
-                <article key={page.id} className="page-preview">
-                  <h3>Page {page.page_number}</h3>
-                  <p className="arabic-text" dir="auto">
-                    {page.content}
-                  </p>
-                  {page.audio_url && (
-                    <audio controls src={page.audio_url} preload="none" />
-                  )}
-                </article>
-              ))}
+              {doc.pages.map((page) => {
+                const pageHasText =
+                  page.has_text ?? Boolean(page.content.split(/\s+/).filter(Boolean).length);
+                return (
+                  <article key={page.id} className="page-preview">
+                    <h3>Page {page.page_number}</h3>
+                    {pageHasText ? (
+                      <p className="arabic-text" dir="auto">
+                        {page.content}
+                      </p>
+                    ) : (
+                      <p className="hint">No reading text (picture-only page)</p>
+                    )}
+                    {page.audio_url && (
+                      <audio controls src={page.audio_url} preload="none" />
+                    )}
+                  </article>
+                );
+              })}
             </div>
 
             <button

@@ -40,8 +40,12 @@ export function UploadWizard() {
       setError("Please enter a title.");
       return;
     }
-    if (pages.some((p) => !p.text.trim() || !p.audioFile)) {
-      setError("Each page needs text and a reference audio file (WAV or MP3).");
+
+    const missingAudio = pages.findIndex((p) => p.text.trim() && !p.audioFile);
+    if (missingAudio >= 0) {
+      setError(
+        `Page ${missingAudio + 1} has reading text but no reference audio. Audio is required for pages with text.`,
+      );
       return;
     }
 
@@ -50,10 +54,16 @@ export function UploadWizard() {
       const content = await fileToBase64(docFile);
       const ext = getFileExtension(docFile.name);
       const pagePayload = await Promise.all(
-        pages.map(async (p) => ({
-          text: p.text.trim(),
-          audio: await fileToBase64(p.audioFile!),
-        })),
+        pages.map(async (p) => {
+          const text = p.text.trim();
+          if (!text) {
+            return { text: "", audio: null };
+          }
+          return {
+            text,
+            audio: await fileToBase64(p.audioFile!),
+          };
+        }),
       );
 
       const res = await uploadDoc({
@@ -111,35 +121,46 @@ export function UploadWizard() {
 
           <fieldset className="pages-fieldset">
             <legend>Pages ({pages.length})</legend>
-            {pages.map((page, i) => (
-              <div key={i} className="page-entry">
-                <h3>Page {i + 1}</h3>
-                <label>
-                  Reading text
-                  <textarea
-                    value={page.text}
-                    onChange={(e) => updatePage(i, "text", e.target.value)}
-                    rows={3}
-                    dir="auto"
-                    required
-                  />
-                </label>
-                <label>
-                  Reference audio (WAV or MP3)
-                  <input
-                    type="file"
-                    accept=".wav,.mp3,audio/wav,audio/mpeg"
-                    onChange={(e) => updatePage(i, "audioFile", e.target.files?.[0] ?? null)}
-                    required
-                  />
-                </label>
-                {pages.length > 1 && (
-                  <button type="button" className="btn btn-danger btn-sm" onClick={() => removePage(i)}>
-                    Remove page
-                  </button>
-                )}
-              </div>
-            ))}
+            <p className="hint">
+              Leave reading text empty for picture-only pages (audio optional). Pages with text need
+              reference audio.
+            </p>
+            {pages.map((page, i) => {
+              const hasText = Boolean(page.text.trim());
+              return (
+                <div key={i} className="page-entry">
+                  <h3>Page {i + 1}</h3>
+                  <label>
+                    Reading text (optional)
+                    <textarea
+                      value={page.text}
+                      onChange={(e) => updatePage(i, "text", e.target.value)}
+                      rows={3}
+                      dir="auto"
+                      placeholder="Leave empty for a picture-only page"
+                    />
+                  </label>
+                  <label>
+                    Reference audio (WAV or MP3){hasText ? "" : " — optional"}
+                    <input
+                      type="file"
+                      accept=".wav,.mp3,audio/wav,audio/mpeg"
+                      onChange={(e) => updatePage(i, "audioFile", e.target.files?.[0] ?? null)}
+                      required={hasText}
+                    />
+                  </label>
+                  {pages.length > 1 && (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={() => removePage(i)}
+                    >
+                      Remove page
+                    </button>
+                  )}
+                </div>
+              );
+            })}
             <button type="button" className="btn" onClick={addPage}>
               Add page
             </button>
