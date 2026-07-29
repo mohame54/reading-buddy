@@ -1,15 +1,38 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { setAppLanguage, type AppLanguage } from "../i18n";
 
 export function AppShell() {
+  const { t, i18n } = useTranslation();
+  const current = (i18n.language === "en" ? "en" : "ar") as AppLanguage;
+
   return (
     <header className="app-header">
       <Link to="/" className="brand">
-        Reading Buddy
+        {t("brand")}
       </Link>
-      <nav className="mode-nav">
-        <Link to="/admin">Admin</Link>
-        <Link to="/users">Users</Link>
-      </nav>
+      <div className="header-actions">
+        <div className="lang-toggle" role="group" aria-label="Language">
+          <button
+            type="button"
+            className={current === "ar" ? "lang-btn active" : "lang-btn"}
+            onClick={() => void setAppLanguage("ar")}
+          >
+            {t("nav.langAr")}
+          </button>
+          <button
+            type="button"
+            className={current === "en" ? "lang-btn active" : "lang-btn"}
+            onClick={() => void setAppLanguage("en")}
+          >
+            {t("nav.langEn")}
+          </button>
+        </div>
+        <nav className="mode-nav">
+          <Link to="/admin">{t("nav.admin")}</Link>
+          <Link to="/users">{t("nav.users")}</Link>
+        </nav>
+      </div>
     </header>
   );
 }
@@ -38,8 +61,9 @@ export function ErrorBanner({ message }: { message: string }) {
   return <div className="error-banner">{message}</div>;
 }
 
-export function LoadingState({ label = "Loading…" }: { label?: string }) {
-  return <div className="loading">{label}</div>;
+export function LoadingState({ label }: { label?: string }) {
+  const { t } = useTranslation();
+  return <div className="loading">{label ?? t("common.loading")}</div>;
 }
 
 export function Pagination({
@@ -53,6 +77,7 @@ export function Pagination({
   total: number;
   onPageChange: (newOffset: number) => void;
 }) {
+  const { t } = useTranslation();
   const currentPage = Math.floor(offset / limit) + 1;
   const pageCount = Math.max(1, Math.ceil(total / limit));
 
@@ -63,17 +88,17 @@ export function Pagination({
         disabled={offset === 0}
         onClick={() => onPageChange(Math.max(0, offset - limit))}
       >
-        Previous
+        {t("common.previous")}
       </button>
       <span>
-        Page {currentPage} of {pageCount} ({total} total)
+        {t("common.pageOf", { current: currentPage, total: pageCount, count: total })}
       </span>
       <button
         type="button"
         disabled={offset + limit >= total}
         onClick={() => onPageChange(offset + limit)}
       >
-        Next
+        {t("common.next")}
       </button>
     </div>
   );

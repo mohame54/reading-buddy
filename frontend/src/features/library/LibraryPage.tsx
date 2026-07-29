@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { listDocs } from "../../api/catalog";
 import { ApiError } from "../../api/client";
 import type { DocSummary } from "../../types/api";
@@ -14,6 +15,7 @@ import { BookCard } from "./BookCard";
 const PAGE_SIZE = 10;
 
 export function LibraryPage() {
+  const { t } = useTranslation();
   const [items, setItems] = useState<DocSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -29,20 +31,22 @@ export function LibraryPage() {
         setTotal(res.total);
       })
       .catch((err) => {
-        setError(err instanceof ApiError ? err.detail ?? err.message : "Failed to load library");
+        setError(
+          err instanceof ApiError ? err.detail ?? err.message : t("library.loadFailed"),
+        );
       })
       .finally(() => setLoading(false));
-  }, [offset]);
+  }, [offset, t]);
 
   return (
     <>
       <AppShell />
-      <PageLayout title="Library">
+      <PageLayout title={t("library.title")}>
         {error && <ErrorBanner message={error} />}
         {loading ? (
           <LoadingState />
         ) : items.length === 0 ? (
-          <p className="empty">No books available yet.</p>
+          <p className="empty">{t("library.empty")}</p>
         ) : (
           <>
             <div className="book-grid">

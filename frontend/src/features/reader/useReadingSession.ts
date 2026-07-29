@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ReadingSession } from "../../api/websocket";
+import i18n from "../../i18n";
 import type {
   FinalScoreResponse,
   ReaderPhase,
@@ -82,7 +83,11 @@ export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) 
     session
       .connect()
       .then(() => session.start(docId, 1))
-      .catch((err) => setError(err instanceof Error ? err.message : "Connection failed"));
+      .catch((err) =>
+        setError(
+          err instanceof Error ? err.message : i18n.t("reader.connectionFailed"),
+        ),
+      );
 
     return () => {
       session.close();

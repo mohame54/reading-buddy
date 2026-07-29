@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { deleteDoc, getAdminDoc, realignDoc, realignPage } from "../../api/admin";
 import { ApiError } from "../../api/client";
 import type { DocDetailResponse } from "../../types/api";
 import { AppShell, ErrorBanner, LoadingState, PageLayout } from "../../components/Layout";
 
 export function DocDetail() {
+  const { t } = useTranslation();
   const { docId } = useParams<{ docId: string }>();
   const navigate = useNavigate();
   const [doc, setDoc] = useState<DocDetailResponse | null>(null);
@@ -23,43 +25,48 @@ export function DocDetail() {
     try {
       setDoc(await getAdminDoc(docId));
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail ?? err.message : "Failed to load document");
+      setError(
+        err instanceof ApiError ? err.detail ?? err.message : t("admin.loadDocFailed"),
+      );
     } finally {
       setLoading(false);
     }
-  }, [docId]);
+  }, [docId, t]);
 
   useEffect(() => {
     void loadDoc();
   }, [loadDoc]);
 
   const handleDelete = async () => {
-    if (!docId || !confirm("Delete this document permanently?")) return;
+    if (!docId || !confirm(t("admin.confirmDelete"))) return;
     setDeleting(true);
     try {
       await deleteDoc(docId);
       navigate("/admin");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail ?? err.message : "Delete failed");
+      setError(
+        err instanceof ApiError ? err.detail ?? err.message : t("admin.deleteFailed"),
+      );
       setDeleting(false);
     }
   };
 
   const handleRealignDoc = async () => {
-    if (!docId || !confirm("Re-run word alignment for all reading pages?")) return;
+    if (!docId || !confirm(t("admin.confirmRealign"))) return;
     setRealigningDoc(true);
     setError(null);
     setSuccess(null);
     try {
       const result = await realignDoc(docId);
-      setSuccess(
-        `Aligned ${result.pages_aligned} page(s)` +
-          (result.pages_skipped ? `, skipped ${result.pages_skipped}` : "") +
-          ".",
-      );
+      const skipped = result.pages_skipped
+        ? t("admin.skippedPart", { count: result.pages_skipped })
+        : "";
+      setSuccess(t("admin.alignedSuccess", { aligned: result.pages_aligned, skipped }));
       await loadDoc();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail ?? err.message : "Re-align failed");
+      setError(
+        err instanceof ApiError ? err.detail ?? err.message : t("admin.realignFailed"),
+      );
     } finally {
       setRealigningDoc(false);
     }
@@ -72,10 +79,12 @@ export function DocDetail() {
     setSuccess(null);
     try {
       await realignPage(docId, pageNumber);
-      setSuccess(`Page ${pageNumber} alignment updated.`);
+      setSuccess(t("admin.pageAligned", { number: pageNumber }));
       await loadDoc();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail ?? err.message : "Re-align failed");
+      setError(
+        err instanceof ApiError ? err.detail ?? err.message : t("admin.realignFailed"),
+      );
     } finally {
       setRealigningPage(null);
     }
@@ -87,10 +96,10 @@ export function DocDetail() {
     <>
       <AppShell />
       <PageLayout
-        title={doc?.title ?? "Document"}
+        title={doc?.title ?? t("admin.document")}
         actions={
           <Link to="/admin" className="btn">
-            Back to dashboard
+            {t("common.backToDashboard")}
           </Link>
         }
       >
@@ -101,18 +110,18 @@ export function DocDetail() {
         ) : doc ? (
           <>
             <dl className="meta-list">
-              <dt>ID</dt>
+              <dt>{t("admin.id")}</dt>
               <dd>{doc.id}</dd>
-              <dt>Format</dt>
+              <dt>{t("admin.format")}</dt>
               <dd>{doc.ext}</dd>
-              <dt>Pages</dt>
+              <dt>{t("admin.pages")}</dt>
               <dd>{doc.pages_number}</dd>
               {doc.content_url && (
                 <>
-                  <dt>Document</dt>
+                  <dt>{t("admin.documentLabel")}</dt>
                   <dd>
                     <a href={doc.content_url} target="_blank" rel="noreferrer">
-                      Open original
+                      {t("admin.openOriginal")}
                     </a>
                   </dd>
                 </>
@@ -126,11 +135,11 @@ export function DocDetail() {
                 onClick={handleRealignDoc}
                 disabled={busy}
               >
-                {realigningDoc ? "Re-aligning all pages…" : "Re-align all pages"}
+                {realigningDoc ? t("admin.realigningAll") : t("admin.realignAll")}
               </button>
             </p>
 
-            <h2>Pages</h2>
+            <h2>{t("admin.pagesHeading")}</h2>
             <div className="page-list">
               {doc.pages.map((page) => {
                 const pageHasText =
@@ -138,13 +147,13 @@ export function DocDetail() {
                 const canRealign = pageHasText && Boolean(page.audio_url);
                 return (
                   <article key={page.id} className="page-preview">
-                    <h3>Page {page.page_number}</h3>
+                    <h3>{t("common.page", { number: page.page_number })}</h3>
                     {pageHasText ? (
                       <p className="arabic-text" dir="auto">
                         {page.content}
                       </p>
                     ) : (
-                      <p className="hint">No reading text (picture-only page)</p>
+                      <p className="hint">{t("admin.noReadingText")}</p>
                     )}
                     {page.audio_url && (
                       <audio controls src={page.audio_url} preload="none" />
@@ -158,8 +167,8 @@ export function DocDetail() {
                           disabled={busy}
                         >
                           {realigningPage === page.page_number
-                            ? "Re-aligning…"
-                            : "Re-align page"}
+                            ? t("admin.realigning")
+                            : t("admin.realignPage")}
                         </button>
                       </p>
                     )}
@@ -174,7 +183,7 @@ export function DocDetail() {
               onClick={handleDelete}
               disabled={busy}
             >
-              {deleting ? "Deleting…" : "Delete document"}
+              {deleting ? t("admin.deleting") : t("admin.deleteDoc")}
             </button>
           </>
         ) : null}

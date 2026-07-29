@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { blobToBase64 } from "../../api/client";
+import i18n from "../../i18n";
 
 function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
@@ -67,7 +68,7 @@ export function useRecorder() {
       processor.connect(context.destination);
       setRecording(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Microphone access denied");
+      setError(err instanceof Error ? err.message : i18n.t("reader.micDenied"));
     }
   }, []);
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { listAdminDocs } from "../../api/admin";
 import { ApiError } from "../../api/client";
 import type { DocSummary } from "../../types/api";
@@ -14,6 +15,7 @@ import {
 const PAGE_SIZE = 10;
 
 export function Dashboard() {
+  const { t } = useTranslation();
   const [items, setItems] = useState<DocSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -29,19 +31,21 @@ export function Dashboard() {
         setTotal(res.total);
       })
       .catch((err) => {
-        setError(err instanceof ApiError ? err.detail ?? err.message : "Failed to load documents");
+        setError(
+          err instanceof ApiError ? err.detail ?? err.message : t("admin.loadFailed"),
+        );
       })
       .finally(() => setLoading(false));
-  }, [offset]);
+  }, [offset, t]);
 
   return (
     <>
       <AppShell />
       <PageLayout
-        title="Admin Dashboard"
+        title={t("admin.dashboard")}
         actions={
           <Link to="/admin/upload" className="btn btn-primary">
-            Upload book
+            {t("admin.uploadBook")}
           </Link>
         }
       >
@@ -49,15 +53,15 @@ export function Dashboard() {
         {loading ? (
           <LoadingState />
         ) : items.length === 0 ? (
-          <p className="empty">No documents yet. Upload your first book.</p>
+          <p className="empty">{t("admin.empty")}</p>
         ) : (
           <>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Title</th>
-                  <th>Format</th>
-                  <th>Pages</th>
+                  <th>{t("admin.colTitle")}</th>
+                  <th>{t("admin.colFormat")}</th>
+                  <th>{t("admin.colPages")}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -69,7 +73,7 @@ export function Dashboard() {
                     <td>{doc.pages_number}</td>
                     <td>
                       <Link to={`/admin/docs/${doc.id}`} className="btn btn-sm">
-                        View
+                        {t("admin.view")}
                       </Link>
                     </td>
                   </tr>

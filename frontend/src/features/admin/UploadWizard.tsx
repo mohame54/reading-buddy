@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { uploadDoc } from "../../api/admin";
 import { ApiError, fileToBase64, getFileExtension } from "../../api/client";
 import { AppShell, ErrorBanner, PageLayout } from "../../components/Layout";
@@ -10,6 +11,7 @@ interface PageEntry {
 }
 
 export function UploadWizard() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [docFile, setDocFile] = useState<File | null>(null);
@@ -33,19 +35,17 @@ export function UploadWizard() {
     setError(null);
 
     if (!docFile) {
-      setError("Please select a document file.");
+      setError(t("upload.needFile"));
       return;
     }
     if (!title.trim()) {
-      setError("Please enter a title.");
+      setError(t("upload.needTitle"));
       return;
     }
 
     const missingAudio = pages.findIndex((p) => p.text.trim() && !p.audioFile);
     if (missingAudio >= 0) {
-      setError(
-        `Page ${missingAudio + 1} has reading text but no reference audio. Audio is required for pages with text.`,
-      );
+      setError(t("upload.needAudio", { number: missingAudio + 1 }));
       return;
     }
 
@@ -80,7 +80,7 @@ export function UploadWizard() {
         navigate("/admin");
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail ?? err.message : "Upload failed");
+      setError(err instanceof ApiError ? err.detail ?? err.message : t("upload.failed"));
     } finally {
       setSubmitting(false);
     }
@@ -90,17 +90,17 @@ export function UploadWizard() {
     <>
       <AppShell />
       <PageLayout
-        title="Upload book"
+        title={t("upload.title")}
         actions={
           <Link to="/admin" className="btn">
-            Back to dashboard
+            {t("common.backToDashboard")}
           </Link>
         }
       >
         {error && <ErrorBanner message={error} />}
         <form className="upload-form" onSubmit={handleSubmit}>
           <label>
-            Title
+            {t("upload.fieldTitle")}
             <input
               type="text"
               value={title}
@@ -110,7 +110,7 @@ export function UploadWizard() {
           </label>
 
           <label>
-            Document file (PDF, EPUB, etc.)
+            {t("upload.fieldDoc")}
             <input
               type="file"
               accept=".pdf,.epub,.doc,.docx"
@@ -120,28 +120,26 @@ export function UploadWizard() {
           </label>
 
           <fieldset className="pages-fieldset">
-            <legend>Pages ({pages.length})</legend>
-            <p className="hint">
-              Leave reading text empty for picture-only pages (audio optional). Pages with text need
-              reference audio.
-            </p>
+            <legend>{t("upload.pagesLegend", { count: pages.length })}</legend>
+            <p className="hint">{t("upload.pagesHint")}</p>
             {pages.map((page, i) => {
               const hasText = Boolean(page.text.trim());
               return (
                 <div key={i} className="page-entry">
-                  <h3>Page {i + 1}</h3>
+                  <h3>{t("common.page", { number: i + 1 })}</h3>
                   <label>
-                    Reading text (optional)
+                    {t("upload.readingText")}
                     <textarea
                       value={page.text}
                       onChange={(e) => updatePage(i, "text", e.target.value)}
                       rows={3}
                       dir="auto"
-                      placeholder="Leave empty for a picture-only page"
+                      placeholder={t("upload.textPlaceholder")}
                     />
                   </label>
                   <label>
-                    Reference audio (WAV or MP3){hasText ? "" : " — optional"}
+                    {t("upload.refAudio")}
+                    {hasText ? "" : t("upload.optional")}
                     <input
                       type="file"
                       accept=".wav,.mp3,audio/wav,audio/mpeg"
@@ -155,19 +153,19 @@ export function UploadWizard() {
                       className="btn btn-danger btn-sm"
                       onClick={() => removePage(i)}
                     >
-                      Remove page
+                      {t("upload.removePage")}
                     </button>
                   )}
                 </div>
               );
             })}
             <button type="button" className="btn" onClick={addPage}>
-              Add page
+              {t("upload.addPage")}
             </button>
           </fieldset>
 
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? "Uploading…" : "Upload book"}
+            {submitting ? t("upload.submitting") : t("upload.submit")}
           </button>
         </form>
       </PageLayout>

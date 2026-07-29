@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { getDoc } from "../../api/catalog";
 import { ApiError } from "../../api/client";
 import type { DocDetailResponse, FinalScoreResponse } from "../../types/api";
@@ -22,6 +23,7 @@ function ReaderSession({
   doc: DocDetailResponse;
   audioMap: Map<number, HTMLAudioElement>;
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const audioMapRef = useRef(audioMap);
   const [pageAudioPlaying, setPageAudioPlaying] = useState(false);
@@ -75,10 +77,10 @@ function ReaderSession({
       setAudioLoadError(null);
       return audio;
     } catch {
-      setAudioLoadError("Could not load page audio.");
+      setAudioLoadError(t("reader.audioLoadFailed"));
       return null;
     }
-  }, [pageAudioUrl, pageNumber]);
+  }, [pageAudioUrl, pageNumber, t]);
 
   const handlePlayPageAudio = useCallback(async () => {
     const audio = await ensurePageAudio();
@@ -154,6 +156,8 @@ function ReaderSession({
     </span>
   ));
 
+  const phaseLabel = t(`reader.phases.${phase}`, { defaultValue: phase });
+
   return (
     <>
       {(sessionError || recorderError) && (
@@ -162,21 +166,21 @@ function ReaderSession({
 
       <div className="reader-meta">
         <span>
-          Page {pageNumber} of {pagesTotal}
+          {t("reader.pageOf", { current: pageNumber, total: pagesTotal })}
         </span>
         <span className={connected ? "status-ok" : "status-warn"}>
-          {connected ? "Connected" : "Connecting…"}
+          {connected ? t("reader.connected") : t("reader.connecting")}
         </span>
       </div>
 
       {pageImageUrl ? (
         <img
           src={pageImageUrl}
-          alt={`Page ${pageNumber}`}
+          alt={t("reader.pageImageAlt", { number: pageNumber })}
           className="reader-page-image"
         />
       ) : (
-        <p className="hint reader-image-fallback">Page image unavailable</p>
+        <p className="hint reader-image-fallback">{t("reader.pageImageUnavailable")}</p>
       )}
 
       {hasPageAudio && (
@@ -186,7 +190,7 @@ function ReaderSession({
             className="btn"
             onClick={handlePlayPageAudio}
           >
-            {pageAudioPlaying ? "Stop narration" : "Listen to page"}
+            {pageAudioPlaying ? t("reader.stopNarration") : t("reader.listenPage")}
           </button>
           {audioLoadError && <p className="hint reader-audio-error">{audioLoadError}</p>}
         </div>
@@ -196,12 +200,12 @@ function ReaderSession({
         {hasText ? (
           highlightedWords
         ) : (
-          <p className="hint">No reading text on this page — continue when ready.</p>
+          <p className="hint">{t("reader.noText")}</p>
         )}
       </div>
 
       {hasText && words.length > 0 && (
-        <div className="reader-progress" aria-label="Reading progress">
+        <div className="reader-progress" aria-label={t("reader.progress")}>
           <div className="reader-progress-track">
             <div
               className="reader-progress-fill"
@@ -209,7 +213,10 @@ function ReaderSession({
             />
           </div>
           <span className="reader-progress-label">
-            {Math.min(cursor, words.length)} / {words.length} words
+            {t("reader.wordsProgress", {
+              current: Math.min(cursor, words.length),
+              total: words.length,
+            })}
           </span>
         </div>
       )}
@@ -217,15 +224,15 @@ function ReaderSession({
       {mismatch && (
         <div className="feedback-box">
           <p>
-            Expected: <strong>{mismatch.expected}</strong>
+            {t("reader.expected")} <strong>{mismatch.expected}</strong>
             {mismatch.heard && (
               <>
                 {" "}
-                · Heard: <em>{mismatch.heard}</em>
+                · {t("reader.heard")} <em>{mismatch.heard}</em>
               </>
             )}
           </p>
-          <p className="hint">Listen to the correct pronunciation and try again.</p>
+          <p className="hint">{t("reader.mismatchHint")}</p>
           {hasPageAudio && (
             <div className="feedback-actions">
               {canPlayWordClip && (
@@ -234,7 +241,7 @@ function ReaderSession({
                   className="btn feedback-listen-btn"
                   onClick={handlePlayMismatchWord}
                 >
-                  Hear word
+                  {t("reader.hearWord")}
                 </button>
               )}
               <button
@@ -242,12 +249,12 @@ function ReaderSession({
                 className={`btn ${canPlayWordClip ? "btn-ghost" : ""} feedback-listen-btn`}
                 onClick={handlePlayMismatchFullPage}
               >
-                Hear full page
+                {t("reader.hearFullPage")}
               </button>
             </div>
           )}
           {hasPageAudio && !canPlayWordClip && (
-            <p className="hint">Word clip unavailable — use full page audio.</p>
+            <p className="hint">{t("reader.wordClipUnavailable")}</p>
           )}
         </div>
       )}
@@ -260,25 +267,30 @@ function ReaderSession({
             onClick={handleRecord}
             disabled={phase === "processing" || !connected}
           >
-            {recording ? "Stop" : phase === "retry" ? "Try again" : "Record"}
+            {recording
+              ? t("reader.stop")
+              : phase === "retry"
+                ? t("reader.tryAgain")
+                : t("reader.record")}
           </button>
         )}
 
         <button type="button" className="btn" onClick={goNextPage} disabled={!canGoNext}>
-          Next page
+          {t("reader.nextPage")}
         </button>
 
         <button type="button" className="btn btn-ghost" onClick={endSession}>
-          Finish early
+          {t("reader.finishEarly")}
         </button>
       </div>
 
-      <p className="phase-label">Status: {phase}</p>
+      <p className="phase-label">{t("reader.status", { phase: phaseLabel })}</p>
     </>
   );
 }
 
 export function ReaderPage() {
+  const { t } = useTranslation();
   const { docId } = useParams<{ docId: string }>();
   const [doc, setDoc] = useState<DocDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -311,18 +323,20 @@ export function ReaderPage() {
       })
       .catch((err) => {
         setPrepareError(
-          err instanceof ApiError ? err.detail ?? err.message : "Failed to prepare book",
+          err instanceof ApiError
+            ? err.detail ?? err.message
+            : t("reader.prepareFailed"),
         );
       })
       .finally(() => setLoading(false));
-  }, [docId]);
+  }, [docId, t]);
 
   if (loading) {
     return (
       <>
         <AppShell />
-        <PageLayout title="Preparing book…">
-          <LoadingState label="Loading pages and audio…" />
+        <PageLayout title={t("reader.preparing")}>
+          <LoadingState label={t("reader.loadingPages")} />
         </PageLayout>
       </>
     );
@@ -332,10 +346,10 @@ export function ReaderPage() {
     return (
       <>
         <AppShell />
-        <PageLayout title="Reader">
-          <ErrorBanner message={prepareError ?? "Book not found"} />
+        <PageLayout title={t("reader.title")}>
+          <ErrorBanner message={prepareError ?? t("reader.notFound")} />
           <Link to="/users" className="btn">
-            Back to library
+            {t("common.backToLibrary")}
           </Link>
         </PageLayout>
       </>
@@ -349,7 +363,7 @@ export function ReaderPage() {
         title={doc.title}
         actions={
           <Link to="/users" className="btn">
-            Back to library
+            {t("common.backToLibrary")}
           </Link>
         }
       >
