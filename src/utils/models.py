@@ -1,11 +1,17 @@
-import soundfile as sf
-import numpy as np
-import soxr
-from typing import Tuple, List
-import sherpa_onnx
+import logging
 import os
+from typing import List, Tuple
+
+import numpy as np
+import sherpa_onnx
+import soundfile as sf
+import soxr
 from pydantic import BaseModel
-from src.utils.decode import merge_sherpa_subwords, WordSegment
+
+from src.utils.decorators import Timer
+from src.utils.decode import WordSegment, merge_sherpa_subwords
+
+logger = logging.getLogger(__name__)
 
 
 class RecognitionResult(BaseModel):
@@ -15,6 +21,7 @@ class RecognitionResult(BaseModel):
 
     def merge_subwords(self, frame_dur=0.8) -> List[WordSegment]:
         return merge_sherpa_subwords(self.tokens, self.timestamps, frame_dur)
+
 
 def resample_audio(audio: np.ndarray, orig_rate: int, tr_rate: int) -> np.ndarray:
     if orig_rate != tr_rate:
@@ -27,6 +34,7 @@ def resample_audio(audio: np.ndarray, orig_rate: int, tr_rate: int) -> np.ndarra
             quality="soxr_hq",
         )
     return audio
+
 
 def load_wav(file_path, tr_rate=16_000) -> Tuple[np.ndarray, int]:
     """
@@ -46,7 +54,12 @@ def load_wav(file_path, tr_rate=16_000) -> Tuple[np.ndarray, int]:
     return audio_array, tr_rate
 
 
-def load_stt_recognizer(model_dir: str, num_threads: int = 2, provider: str = "cpu", debug: bool = False):
+def load_stt_recognizer(
+    model_dir: str,
+    num_threads: int = 2,
+    provider: str = "cpu",
+    debug: bool = False,
+):
     model_path = os.path.join(model_dir, "stt_ar_ctc.onnx")
     tokens_path = os.path.join(model_dir, "tokens.txt")
     if not os.path.exists(model_path):
@@ -54,15 +67,19 @@ def load_stt_recognizer(model_dir: str, num_threads: int = 2, provider: str = "c
 
     if not os.path.exists(tokens_path):
         raise FileNotFoundError(f"Tokens file not found: {tokens_path}")
-    
-    recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
-        model=model_path,   # Path to your exported NeMo CTC ONNX model
-        tokens=tokens_path,       # Path to your generated tokens.txt
-        num_threads=num_threads,             # CPU threads
-        provider=provider,           # Use "cuda" for GPU, or "cpu"
-        debug=debug
-    )
 
+    with Timer(
+        "Load STT recognizer",
+        logger=logger,
+        extra={"model_dir": model_dir, "num_threads": num_threads},
+    ):
+        recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
+            model=model_path,
+            tokens=tokens_path,
+            num_threads=num_threads,
+            provider=provider,
+            debug=debug,
+        )
     return recognizer
 
 
@@ -72,38 +89,45 @@ def recognize_audio(
     sample_rate: int = 16_000,
 ) -> RecognitionResult:
     if audio.ndim > 1:
-       audio = audio[:, 0]
+        audio = audio[:, 0]
 
-    stream = recognizer.create_stream()
-    stream.accept_waveform(sample_rate, audio)
-    recognizer.decode_stream(stream)
-
-    result = stream.result
+    with Timer("Recognize single audio", logger=logger, level=logging.DEBUG):
+        stream = recognizer.create_stream()
+        stream.accept_waveform(sample_rate, audio)
+        recognizer.decode_stream(stream)
+        result = stream.result
     return RecognitionResult(
         text=result.text,
         timestamps=result.timestamps,
-        tokens=result.tokens
+        tokens=result.tokens,
     )
+
 
 def recognize_audios(
     recognizer: sherpa_onnx.OfflineRecognizer,
     audio: List[np.ndarray],
     sample_rate: int = 16_000,
 ) -> List[RecognitionResult]:
-    streams = []
-    for audio_chunk in audio:
-        if audio_chunk.ndim > 1:
-            audio_chunk = audio_chunk[:, 0]
-        stream = recognizer.create_stream()
-        stream.accept_waveform(sample_rate, audio_chunk)
-        streams.append(stream)
-    recognizer.decode_streams(streams)
-    results = []
-    for stream in streams:
-        result = stream.result
-        results.append(RecognitionResult(
-            text=result.text,
-            timestamps=result.timestamps,
-            tokens=result.tokens
-        ))
+    if not audio:
+        return []
+
+    with Timer("Recognize audio batch", logger=logger, extra={"batch_size": len(audio)}):
+        streams = []
+        for audio_chunk in audio:
+            if audio_chunk.ndim > 1:
+                audio_chunk = audio_chunk[:, 0]
+            stream = recognizer.create_stream()
+            stream.accept_waveform(sample_rate, audio_chunk)
+            streams.append(stream)
+        recognizer.decode_streams(streams)
+        results = []
+        for stream in streams:
+            result = stream.result
+            results.append(
+                RecognitionResult(
+                    text=result.text,
+                    timestamps=result.timestamps,
+                    tokens=result.tokens,
+                )
+            )
     return results

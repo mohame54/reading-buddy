@@ -1,6 +1,5 @@
 import base64
 import io
-import json
 import logging
 import os
 import uuid
@@ -81,27 +80,30 @@ class STTService:
         if not project_dataset_id:
             raise ValueError("PROJECT_ID environment variable is not set")
 
-        self.recognizer = load_stt_recognizer(self.model_dir, self.num_threads)
-        self.docs_bq = BigQueryIndexBase(
-            proj_dataset_id=project_dataset_id,
-            schema_path=schema_path,
-            schema_key="docs",
-            skip_vertex_init=True,
-        )
-        self.pages_bq = BigQueryIndexBase(
-            proj_dataset_id=project_dataset_id,
-            schema_path=schema_path,
-            schema_key="pages",
-            skip_vertex_init=True,
-        )
-        self.docs_bq.set_current_table("docs")
-        self.pages_bq.set_current_table("pages")
+        with Timer("Load STT service components", logger=logger):
+            self.recognizer = load_stt_recognizer(self.model_dir, self.num_threads)
+            self.docs_bq = BigQueryIndexBase(
+                proj_dataset_id=project_dataset_id,
+                schema_path=schema_path,
+                schema_key="docs",
+                skip_vertex_init=True,
+            )
+            self.pages_bq = BigQueryIndexBase(
+                proj_dataset_id=project_dataset_id,
+                schema_path=schema_path,
+                schema_key="pages",
+                skip_vertex_init=True,
+            )
+            self.docs_bq.set_current_table("docs")
+            self.pages_bq.set_current_table("pages")
 
     def start(self) -> None:
-        self.docs_bq.start_pool()
+        with Timer("Start STT service pool", logger=logger):
+            self.docs_bq.start_pool()
 
     def stop(self) -> None:
-        self.docs_bq.stop_pool()
+        with Timer("Stop STT service pool", logger=logger):
+            self.docs_bq.stop_pool()
 
     def _audio_array_from_bytes(self, raw_bytes: bytes) -> tuple[np.ndarray, int]:
         audio, sample_rate = sf.read(io.BytesIO(raw_bytes))
@@ -116,24 +118,37 @@ class STTService:
         if not raw_bytes_list:
             return []
 
-        arrays: List[np.ndarray] = []
-        for raw_bytes in raw_bytes_list:
-            audio, _ = self._audio_array_from_bytes(raw_bytes)
-            arrays.append(audio)
+        align_extra = {
+            "pages": len(raw_bytes_list),
+            "batch_size": self.align_batch_size,
+        }
+        with Timer("Align page audios", logger=logger, extra=align_extra):
+            arrays: List[np.ndarray] = []
+            for raw_bytes in raw_bytes_list:
+                audio, _ = self._audio_array_from_bytes(raw_bytes)
+                arrays.append(audio)
 
-        aligned: List[str] = []
-        batch_size = self.align_batch_size
-        for i in range(0, len(arrays), batch_size):
-            batch = arrays[i : i + batch_size]
-            results = recognize_audios(self.recognizer, batch, sample_rate=16_000)
-            for result in results:
-                aligned.append(serialize_content_aligned(result.merge_subwords()))
+            aligned: List[str] = []
+            batch_size = self.align_batch_size
+            for i in range(0, len(arrays), batch_size):
+                batch = arrays[i : i + batch_size]
+                batch_num = i // batch_size + 1
+                with Timer(
+                    "Align page audio batch",
+                    logger=logger,
+                    level=logging.DEBUG,
+                    extra={"batch": batch_num, "size": len(batch)},
+                ):
+                    results = recognize_audios(self.recognizer, batch, sample_rate=16_000)
+                    for result in results:
+                        aligned.append(serialize_content_aligned(result.merge_subwords()))
         return aligned
 
     def _heard_words_from_audio_b64(self, audio_b64: str) -> List[str]:
-        audio, sample_rate = decode_audio_base64(audio_b64)
-        audio = resample_audio(audio, sample_rate, 16_000)
-        result = recognize_audio(self.recognizer, audio, 16_000)
+        with Timer("Decode and recognize audio", logger=logger, level=logging.DEBUG):
+            audio, sample_rate = decode_audio_base64(audio_b64)
+            audio = resample_audio(audio, sample_rate, 16_000)
+            result = recognize_audio(self.recognizer, audio, 16_000)
         return [seg.word for seg in result.merge_subwords()]
 
     async def insert_doc(self, req: InsertDocReq) -> StatusResponse:
@@ -145,23 +160,40 @@ class STTService:
 
         doc_id = str(uuid.uuid4())
         try:
-            with Timer(f"Inserting doc {req.title}"):
+            insert_extra = {
+                "doc_id": doc_id,
+                "title": req.title,
+                "pages": req.pages_number,
+            }
+            with Timer("Insert doc", logger=logger, extra=insert_extra):
                 doc_bytes = base64.b64decode(req.content)
-                gcs_uri = self.storage.upload_doc(doc_id, req.ext, doc_bytes)
+                logger.debug("Decoded doc content size_bytes=%d", len(doc_bytes))
 
-                preview_gcs_uri = None
-                preview_png = render_first_page_preview(doc_bytes, req.ext)
-                if preview_png:
-                    preview_gcs_uri = self.storage.upload_preview(doc_id, preview_png)
+                with Timer("Upload doc assets", logger=logger, extra={"doc_id": doc_id}):
+                    gcs_uri = self.storage.upload_doc(doc_id, req.ext, doc_bytes)
 
-                page_audios: List[bytes] = []
-                audio_gcs_uris: List[str] = []
-                for page_number, page_req in enumerate(req.pages, start=1):
-                    audio_bytes = base64.b64decode(page_req.audio)
-                    audio_gcs_uris.append(
-                        self.storage.upload_page_audio(doc_id, page_number, audio_bytes)
+                    preview_gcs_uri = None
+                    preview_png = render_first_page_preview(doc_bytes, req.ext)
+                    if preview_png:
+                        preview_gcs_uri = self.storage.upload_preview(doc_id, preview_png)
+
+                    page_audios: List[bytes] = []
+                    audio_gcs_uris: List[str] = []
+                    total_audio_bytes = 0
+                    for page_number, page_req in enumerate(req.pages, start=1):
+                        audio_bytes = base64.b64decode(page_req.audio)
+                        total_audio_bytes += len(audio_bytes)
+                        audio_gcs_uris.append(
+                            self.storage.upload_page_audio(doc_id, page_number, audio_bytes)
+                        )
+                        page_audios.append(audio_bytes)
+                    logger.debug(
+                        "Uploaded page audios doc_id=%s count=%d total_bytes=%d",
+                        doc_id,
+                        len(page_audios),
+                        total_audio_bytes,
                     )
-                    page_audios.append(audio_bytes)
+
                 content_aligned_list = self._align_page_audios(page_audios)
 
                 page_records: List[Dict[str, Any]] = []
@@ -187,10 +219,15 @@ class STTService:
                     preview_gcs_uri=preview_gcs_uri,
                 ).model_dump()
 
-                self.docs_bq.set_current_table("docs")
-                self.docs_bq.insert_records([doc_record])
-                self.pages_bq.set_current_table("pages")
-                self.pages_bq.insert_records(page_records)
+                with Timer(
+                    "Insert doc records",
+                    logger=logger,
+                    extra={"doc_id": doc_id, "pages": len(page_records)},
+                ):
+                    self.docs_bq.set_current_table("docs")
+                    self.docs_bq.insert_records([doc_record])
+                    self.pages_bq.set_current_table("pages")
+                    self.pages_bq.insert_records(page_records)
 
             return StatusResponse(
                 status="success",
@@ -198,7 +235,7 @@ class STTService:
                 doc_id=doc_id,
             )
         except Exception as exc:
-            logger.exception("Failed to insert doc")
+            logger.exception("Failed to insert doc doc_id=%s", doc_id)
             try:
                 self.storage.delete_doc_assets(doc_id, req.ext)
             except Exception:
@@ -208,114 +245,132 @@ class STTService:
     async def list_docs(self, offset: int = 0, limit: int = 10) -> DocListResponse:
         offset = max(0, offset)
         limit = max(1, min(limit, 100))
+        list_extra = {"offset": offset, "limit": limit}
 
-        self.docs_bq.set_current_table("docs")
-        count_rows = await self.docs_bq.run_queries(DOCS_COUNT)
-        total = int(count_rows[0][0]["total"]) if count_rows and count_rows[0] else 0
+        with Timer("List docs", logger=logger, extra=list_extra):
+            self.docs_bq.set_current_table("docs")
+            count_rows = await self.docs_bq.run_queries(DOCS_COUNT)
+            total = int(count_rows[0][0]["total"]) if count_rows and count_rows[0] else 0
 
-        page_query = DOCS_SELECT_ALL.format(
-            dataset_table_id="{dataset_table_id}",
-            limit=limit,
-            offset=offset,
-        )
-        doc_rows = await self.docs_bq.run_queries(page_query)
-        docs = doc_rows[0] if doc_rows and doc_rows[0] else []
-
-        first_by_doc: Dict[str, str] = {}
-        if docs:
-            self.pages_bq.set_current_table("pages")
-            first_page_rows = await self.pages_bq.run_queries(
-                PAGES_SELECT_FIRST,
-                records=[{"doc_id": row["id"]} for row in docs],
+            page_query = DOCS_SELECT_ALL.format(
+                dataset_table_id="{dataset_table_id}",
+                limit=limit,
+                offset=offset,
             )
-            for result in first_page_rows:
-                if result:
-                    first_by_doc[result[0]["doc_id"]] = result[0]["content"]
+            doc_rows = await self.docs_bq.run_queries(page_query)
+            docs = doc_rows[0] if doc_rows and doc_rows[0] else []
 
-        items: List[DocSummary] = []
-        for row in docs:
-            preview_uri = row.get("preview_gcs_uri")
-            image_url = self.storage.signed_url(preview_uri) if preview_uri else None
-            items.append(
-                DocSummary(
-                    id=row["id"],
-                    title=row["title"],
-                    ext=row["ext"],
-                    pages_number=row["pages_number"],
-                    first_page_content=first_by_doc.get(row["id"]),
-                    first_page_image_url=image_url,
+            first_by_doc: Dict[str, str] = {}
+            if docs:
+                self.pages_bq.set_current_table("pages")
+                first_page_rows = await self.pages_bq.run_queries(
+                    PAGES_SELECT_FIRST,
+                    records=[{"doc_id": row["id"]} for row in docs],
                 )
-            )
+                for result in first_page_rows:
+                    if result:
+                        first_by_doc[result[0]["doc_id"]] = result[0]["content"]
+
+            items: List[DocSummary] = []
+            for row in docs:
+                preview_uri = row.get("preview_gcs_uri")
+                image_url = self.storage.signed_url(preview_uri) if preview_uri else None
+                items.append(
+                    DocSummary(
+                        id=row["id"],
+                        title=row["title"],
+                        ext=row["ext"],
+                        pages_number=row["pages_number"],
+                        first_page_content=first_by_doc.get(row["id"]),
+                        first_page_image_url=image_url,
+                    )
+                )
+            list_extra["total"] = total
+            list_extra["returned"] = len(items)
+
         return DocListResponse(items=items, total=total, offset=offset, limit=limit)
 
     async def get_doc(self, doc_id: str, include_url: bool = True) -> Optional[DocDetailResponse]:
-        self.docs_bq.set_current_table("docs")
-        doc_rows = await self.docs_bq.run_queries(
-            DOC_SELECT_BY_ID, records=[{"id": doc_id}]
-        )
-        if not doc_rows or not doc_rows[0]:
-            return None
-
-        doc = doc_rows[0][0]
-        self.pages_bq.set_current_table("pages")
-        page_rows = await self.pages_bq.run_queries(
-            PAGES_SELECT_BY_DOC, records=[{"doc_id": doc_id}]
-        )
-        pages = [
-            PageSummary(
-                id=row["id"],
-                page_number=row["page_number"],
-                content=row["content"],
-                audio_url=(
-                    self.storage.signed_url(row["audio_gcs_uri"]) if include_url else None
-                ),
+        extra = {"doc_id": doc_id, "include_url": include_url}
+        with Timer("Get doc", logger=logger, extra=extra):
+            self.docs_bq.set_current_table("docs")
+            doc_rows = await self.docs_bq.run_queries(
+                DOC_SELECT_BY_ID, records=[{"id": doc_id}]
             )
-            for row in page_rows[0]
-        ]
-        content_url = self.storage.signed_url(doc["gcs_uri"]) if include_url else None
-        return DocDetailResponse(
-            id=doc["id"],
-            title=doc["title"],
-            ext=doc["ext"],
-            pages_number=doc["pages_number"],
-            gcs_uri=doc["gcs_uri"],
-            content_url=content_url,
-            pages=pages,
-        )
+            if not doc_rows or not doc_rows[0]:
+                extra["found"] = False
+                return None
+
+            doc = doc_rows[0][0]
+            self.pages_bq.set_current_table("pages")
+            page_rows = await self.pages_bq.run_queries(
+                PAGES_SELECT_BY_DOC, records=[{"doc_id": doc_id}]
+            )
+            pages = [
+                PageSummary(
+                    id=row["id"],
+                    page_number=row["page_number"],
+                    content=row["content"],
+                    audio_url=(
+                        self.storage.signed_url(row["audio_gcs_uri"]) if include_url else None
+                    ),
+                )
+                for row in page_rows[0]
+            ]
+            content_url = self.storage.signed_url(doc["gcs_uri"]) if include_url else None
+            extra["found"] = True
+            extra["pages"] = len(pages)
+            return DocDetailResponse(
+                id=doc["id"],
+                title=doc["title"],
+                ext=doc["ext"],
+                pages_number=doc["pages_number"],
+                gcs_uri=doc["gcs_uri"],
+                content_url=content_url,
+                pages=pages,
+            )
 
     async def get_page(
         self, doc_id: str, page_number: int, include_url: bool = True
     ) -> Optional[PageDetailResponse]:
-        self.pages_bq.set_current_table("pages")
-        rows = await self.pages_bq.run_queries(
-            PAGE_SELECT, records=[{"doc_id": doc_id, "page_number": page_number}]
-        )
-        if not rows or not rows[0]:
-            return None
-        row = rows[0][0]
-        audio_url = (
-            self.storage.signed_url(row["audio_gcs_uri"]) if include_url else None
-        )
-        return PageDetailResponse(
-            id=row["id"],
-            doc_id=row["doc_id"],
-            page_number=row["page_number"],
-            content=row["content"],
-            content_aligned=row.get("content_aligned"),
-            audio_gcs_uri=row["audio_gcs_uri"],
-            audio_url=audio_url,
-        )
+        extra = {"doc_id": doc_id, "page": page_number, "include_url": include_url}
+        with Timer("Get page", logger=logger, extra=extra):
+            self.pages_bq.set_current_table("pages")
+            rows = await self.pages_bq.run_queries(
+                PAGE_SELECT, records=[{"doc_id": doc_id, "page_number": page_number}]
+            )
+            if not rows or not rows[0]:
+                extra["found"] = False
+                return None
+            row = rows[0][0]
+            audio_url = (
+                self.storage.signed_url(row["audio_gcs_uri"]) if include_url else None
+            )
+            extra["found"] = True
+            return PageDetailResponse(
+                id=row["id"],
+                doc_id=row["doc_id"],
+                page_number=row["page_number"],
+                content=row["content"],
+                content_aligned=row.get("content_aligned"),
+                audio_gcs_uri=row["audio_gcs_uri"],
+                audio_url=audio_url,
+            )
 
     async def delete_doc(self, doc_id: str) -> StatusResponse:
-        doc = await self.get_doc(doc_id, include_url=False)
-        if not doc:
-            return StatusResponse(status="error", message="Document not found")
+        extra = {"doc_id": doc_id}
+        with Timer("Delete doc", logger=logger, extra=extra):
+            doc = await self.get_doc(doc_id, include_url=False)
+            if not doc:
+                extra["found"] = False
+                return StatusResponse(status="error", message="Document not found")
 
-        self.pages_bq.set_current_table("pages")
-        await self.pages_bq.run_queries(PAGES_DELETE_BY_DOC, records=[{"doc_id": doc_id}])
-        self.docs_bq.set_current_table("docs")
-        await self.docs_bq.run_queries(DOC_DELETE_BY_ID, records=[{"id": doc_id}])
-        self.storage.delete_doc_assets(doc_id, doc.ext)
+            self.pages_bq.set_current_table("pages")
+            await self.pages_bq.run_queries(PAGES_DELETE_BY_DOC, records=[{"doc_id": doc_id}])
+            self.docs_bq.set_current_table("docs")
+            await self.docs_bq.run_queries(DOC_DELETE_BY_ID, records=[{"id": doc_id}])
+            self.storage.delete_doc_assets(doc_id, doc.ext)
+            extra["found"] = True
         return StatusResponse(status="success", message="Document deleted")
 
     async def check_reading(
@@ -325,41 +380,55 @@ class STTService:
         audio_b64: str,
         cursor: int = 0,
     ) -> CheckReadingResponse:
-        page = await self.get_page(doc_id, page_number, include_url=False)
-        if not page:
-            raise ValueError("Page not found")
+        check_extra = {
+            "doc_id": doc_id,
+            "page": page_number,
+            "cursor": cursor,
+        }
+        with Timer("Check reading", logger=logger, extra=check_extra):
+            page = await self.get_page(doc_id, page_number, include_url=False)
+            if not page:
+                raise ValueError("Page not found")
 
-        expected_words = tokenize_text(page.content)
-        heard_words = self._heard_words_from_audio_b64(audio_b64)
-        new_cursor, raw_mismatches = compare_utterance(
-            expected_words, heard_words, cursor
-        )
+            expected_words = tokenize_text(page.content)
+            heard_words = self._heard_words_from_audio_b64(audio_b64)
+            logger.debug(
+                "Check reading heard_words=%d expected_words=%d",
+                len(heard_words),
+                len(expected_words),
+            )
+            new_cursor, raw_mismatches = compare_utterance(
+                expected_words, heard_words, cursor
+            )
 
-        mismatches: List[WordMismatch] = []
-        if raw_mismatches:
-            segments = parse_content_aligned(page.content_aligned)
+            mismatches: List[WordMismatch] = []
+            if raw_mismatches:
+                segments = parse_content_aligned(page.content_aligned)
 
-            for index, expected, heard in raw_mismatches:
-                seg_idx = fuzzy_match_segment_index(expected, segments, index)
-                start = segments[seg_idx].start if seg_idx >= 0 else None
-                end = segments[seg_idx].end if seg_idx >= 0 else None
-                mismatches.append(
-                    WordMismatch(
-                        index=index,
-                        expected=expected,
-                        heard=heard,
-                        start=start,
-                        end=end,
+                for index, expected, heard in raw_mismatches:
+                    seg_idx = fuzzy_match_segment_index(expected, segments, index)
+                    start = segments[seg_idx].start if seg_idx >= 0 else None
+                    end = segments[seg_idx].end if seg_idx >= 0 else None
+                    mismatches.append(
+                        WordMismatch(
+                            index=index,
+                            expected=expected,
+                            heard=heard,
+                            start=start,
+                            end=end,
+                        )
                     )
-                )
 
-        page_complete = new_cursor >= len(expected_words)
-        return CheckReadingResponse(
-            ok=len(mismatches) == 0,
-            cursor=new_cursor,
-            mismatches=mismatches,
-            page_complete=page_complete,
-        )
+            page_complete = new_cursor >= len(expected_words)
+            check_extra["new_cursor"] = new_cursor
+            check_extra["mismatches"] = len(mismatches)
+            check_extra["page_complete"] = page_complete
+            return CheckReadingResponse(
+                ok=len(mismatches) == 0,
+                cursor=new_cursor,
+                mismatches=mismatches,
+                page_complete=page_complete,
+            )
 
     def build_final_score(
         self,

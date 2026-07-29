@@ -1,13 +1,41 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api import admin, docs, reading
 from src.services.bootstrap import bootstrap_tables
 from src.services.storage_service import StorageService
 from src.services.stt_service import STTService
+from src.utils.decorators import Timer
+
+logger = logging.getLogger(__name__)
+
+_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.INFO),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+
+
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        extra = {"method": request.method, "path": request.url.path}
+        path = request.url.path
+        level = logging.DEBUG if path == "/health" else logging.INFO
+        with Timer(
+            "HTTP request",
+            logger=logger,
+            extra=extra,
+            level=level,
+            duration_unit="ms",
+        ):
+            response = await call_next(request)
+            extra["status"] = response.status_code
+        return response
 
 
 @asynccontextmanager
@@ -42,6 +70,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestTimingMiddleware)
 
 app.include_router(admin.router)
 app.include_router(docs.router)
