@@ -57,7 +57,7 @@ The frontend deploys as Cloud Run service `reading-buddy-web` using nginx.
 gcloud builds submit --config cloudbuild.yaml .
 ```
 
-The root [`DockerFile`](../DockerFile) builds `frontend/` and serves the static SPA on port 8080.
+The root [`Dockerfile`](../Dockerfile) builds `frontend/` and serves the static SPA on port 8080.
 
 ## Environment variables
 

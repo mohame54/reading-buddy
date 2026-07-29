@@ -47,7 +47,7 @@ uv run uvicorn main:app --reload --port 8080
 ## Docker
 
 ```bash
-docker build -f DockerFile -t reading-buddy .
+docker build -f Dockerfile -t reading-buddy .
 docker run -p 8080:8080 \
   -e PROJECT_ID=... \
   -e GOOGLE_CREDENTIALS=... \

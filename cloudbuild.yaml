@@ -4,21 +4,24 @@ steps:
       - DOCKER_BUILDKIT=1
     args:
       - build
-      - -t
-      - $_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
-      - -f
-      - DockerFile
+      - '--no-cache'
+      - '-t'
+      - >-
+        $_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+      - .
+      - '-f'
+      - Dockerfile
       - --build-arg
       - VITE_API_BASE=$_VITE_API_BASE
       - --build-arg
       - VITE_WS_BASE=$_VITE_WS_BASE
-      - .
     id: Build
 
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - $_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+      - >-
+        $_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
     id: Push
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
@@ -27,30 +30,32 @@ steps:
       - services
       - update
       - $_SERVICE_NAME
-      - --platform=$_PLATFORM
-      - --image=$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
-      - --labels=managed-by=gcp-cloud-build-deploy-cloud-run,commit-sha=$COMMIT_SHA,gcb-build-id=$BUILD_ID,gcb-trigger-id=$_TRIGGER_ID
-      - --region=$_DEPLOY_REGION
-      - --quiet
+      - '--platform=managed'
+      - >-
+        --image=$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+      - >-
+        --labels=managed-by=gcp-cloud-build-deploy-cloud-run,commit-sha=$COMMIT_SHA,gcb-build-id=$BUILD_ID,gcb-trigger-id=$_TRIGGER_ID
+      - '--region=$_DEPLOY_REGION'
+      - '--quiet'
     id: Deploy
     entrypoint: gcloud
 
 images:
-  - $_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+  - >-
+    $_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
 
 options:
   substitutionOption: ALLOW_LOOSE
   logging: CLOUD_LOGGING_ONLY
 
 substitutions:
+  _AR_PROJECT_ID: deepauto-498713
+  _PLATFORM: managed
+  _TRIGGER_ID: 08763b5b-d021-45dc-b6f8-f65e560ebbab
+  _SERVICE_NAME: reading-buddy-frontend
+  _DEPLOY_REGION: europe-west1
   _AR_HOSTNAME: europe-west1-docker.pkg.dev
   _AR_REPOSITORY: cloud-run-source-deploy
-  _TRIGGER_ID: 407a4a6a-b745-4558-ac91-e16b7aa53cac
-  _AR_PROJECT_ID: sensemakers-ai-20250609
-  _PLATFORM: managed
-  _SERVICE_NAME: reading-buddy-web
-  REPO_NAME: reading-buddy
-  _DEPLOY_REGION: europe-west1
   # Backend API URL — set to your deployed reading-buddy API host
   _VITE_API_BASE: https://reading-buddy-435679247323.europe-west1.run.app
   _VITE_WS_BASE: wss://reading-buddy-435679247323.europe-west1.run.app
@@ -58,4 +63,4 @@ substitutions:
 tags:
   - gcp-cloud-build-deploy-cloud-run
   - gcp-cloud-build-deploy-cloud-run-managed
-  - reading-buddy-web
+  - reading-buddy-frontend

@@ -49,4 +49,4 @@ Before deploying, set in [`cloudbuild.yaml`](cloudbuild.yaml):
 
 Also set backend `CORS_ORIGINS` to your frontend Cloud Run origin (e.g. `https://reading-buddy-web-xxxxx.run.app`).
 
-The root [`DockerFile`](DockerFile) builds `frontend/` into a static nginx image on port 8080.
+The root [`Dockerfile`](Dockerfile) builds `frontend/` into a static nginx image on port 8080.
