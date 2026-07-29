@@ -1,0 +1,77 @@
+steps:
+  # Build step with BuildKit enabled
+  - name: gcr.io/cloud-builders/docker
+    env:
+      - 'DOCKER_BUILDKIT=1'
+    args:
+      - build
+      - '-t'
+      - >-
+        $_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+      - '.'
+      - '-f'
+      - DockerFile
+    id: Build
+
+  # Push the commit SHA tagged image
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - >-
+        $_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+    id: Push
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    args:
+      - run
+      - services
+      - update
+      - $_SERVICE_NAME
+      - '--platform=$_PLATFORM'
+      - >-
+        --image=$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+      - >-
+        --labels=managed-by=gcp-cloud-build-deploy-cloud-run,commit-sha=$COMMIT_SHA,gcb-build-id=$BUILD_ID,gcb-trigger-id=$_TRIGGER_ID
+      - '--region=$_DEPLOY_REGION'
+      - >-
+        --set-secrets=GOOGLE_CREDENTIALS=GOOGLE_CREDENTIALS:latest,FOLDER_DRIVE_ID=FOLDER_DRIVE_ID:latest
+      - >-
+        --set-env-vars=^@^PROJECT_ID=$_PROJECT_ID@GCS_BUCKET=$_GCS_BUCKET@MODEL_DIR=$_MODEL_DIR@STT_NUM_THREADS=$_STT_NUM_THREADS@STT_ALIGN_BATCH_SIZE=$_STT_ALIGN_BATCH_SIZE@CORS_ORIGINS=$_CORS_ORIGINS@BQ_POOL_NUM_WORKERS=$_BQ_POOL_NUM_WORKERS@BQ_POOL_READY_TIMEOUT=$_BQ_POOL_READY_TIMEOUT@BQ_POOL_QUERY_TIMEOUT=$_BQ_POOL_QUERY_TIMEOUT@BQ_POOL_MAX_QUEUE_SIZE=$_BQ_POOL_MAX_QUEUE_SIZE@BQ_POOL_QUEUE_PUT_TIMEOUT_SECS=$_BQ_POOL_QUEUE_PUT_TIMEOUT_SECS
+      - '--quiet'
+    id: Deploy
+    entrypoint: gcloud
+
+images:
+  - >-
+    $_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+
+options:
+  substitutionOption: ALLOW_LOOSE
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _AR_HOSTNAME: europe-west1-docker.pkg.dev
+  _AR_REPOSITORY: cloud-run-source-deploy
+  _TRIGGER_ID: 407a4a6a-b745-4558-ac91-e16b7aa53cac
+  _AR_PROJECT_ID: sensemakers-ai-20250609
+  _PLATFORM: managed
+  _SERVICE_NAME: reading-buddy
+  REPO_NAME: reading-buddy
+  _DEPLOY_REGION: europe-west1
+  # Non-sensitive environment variables (see docs/development.md)
+  _PROJECT_ID: sensemakers-ai-20250609.reading_buddy
+  _GCS_BUCKET: reading-buddy
+  _MODEL_DIR: models
+  _STT_NUM_THREADS: '2'
+  _STT_ALIGN_BATCH_SIZE: '4'
+  _CORS_ORIGINS: '*'
+  _BQ_POOL_NUM_WORKERS: '1'
+  _BQ_POOL_READY_TIMEOUT: '5'
+  _BQ_POOL_QUERY_TIMEOUT: '60'
+  _BQ_POOL_MAX_QUEUE_SIZE: '50'
+  _BQ_POOL_QUEUE_PUT_TIMEOUT_SECS: '10'
+tags:
+  - gcp-cloud-build-deploy-cloud-run
+  - gcp-cloud-build-deploy-cloud-run-managed
+  - reading-buddy

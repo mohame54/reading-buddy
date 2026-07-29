@@ -1,0 +1,380 @@
+import base64
+import io
+import json
+import logging
+import os
+import uuid
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import soundfile as sf
+
+from src.bq.base import BigQueryIndexBase
+from src.bq.queries import (
+    DOC_DELETE_BY_ID,
+    DOC_SELECT_BY_ID,
+    DOCS_COUNT,
+    DOCS_SELECT_ALL,
+    PAGE_SELECT,
+    PAGES_DELETE_BY_DOC,
+    PAGES_SELECT_BY_DOC,
+    PAGES_SELECT_FIRST,
+)
+from src.data.models import Doc, Page
+from src.data.reqs import (
+    CheckReadingResponse,
+    DocDetailResponse,
+    DocListResponse,
+    DocSummary,
+    FinalScoreResponse,
+    InsertDocReq,
+    PageDetailResponse,
+    PageSummary,
+    StatusResponse,
+    WordMismatch,
+)
+from src.services.storage_service import StorageService
+from src.utils.compare import (
+    compare_utterance,
+    decode_audio_base64,
+    fuzzy_match_segment_index,
+    parse_content_aligned,
+    serialize_content_aligned,
+    tokenize_text,
+)
+from src.utils.decorators import Timer
+from src.utils.models import (
+    load_stt_recognizer,
+    recognize_audio,
+    recognize_audios,
+    resample_audio,
+)
+from src.utils.preview import render_first_page_preview
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_ALIGN_BATCH_SIZE = int(os.getenv("ALIGN_BATCH_SIZE", 8))
+
+
+class STTService:
+    def __init__(
+        self,
+        model_dir: str,
+        storage: StorageService,
+        num_threads: int = 2,
+        align_batch_size: int = DEFAULT_ALIGN_BATCH_SIZE,
+        schema_path: Optional[str] = None,
+    ):
+        self.model_dir = model_dir
+        self.num_threads = num_threads
+        self.align_batch_size = max(1, align_batch_size)
+        self.storage = storage
+        if schema_path is None:
+            schema_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)), "schemas.json"
+            )
+        self.schema_path = schema_path
+        self.load_components(schema_path)
+
+    def load_components(self, schema_path: str) -> None:
+        project_dataset_id = os.getenv("PROJECT_ID")
+        if not project_dataset_id:
+            raise ValueError("PROJECT_ID environment variable is not set")
+
+        self.recognizer = load_stt_recognizer(self.model_dir, self.num_threads)
+        self.docs_bq = BigQueryIndexBase(
+            proj_dataset_id=project_dataset_id,
+            schema_path=schema_path,
+            schema_key="docs",
+            skip_vertex_init=True,
+        )
+        self.pages_bq = BigQueryIndexBase(
+            proj_dataset_id=project_dataset_id,
+            schema_path=schema_path,
+            schema_key="pages",
+            skip_vertex_init=True,
+        )
+        self.docs_bq.set_current_table("docs")
+        self.pages_bq.set_current_table("pages")
+
+    def start(self) -> None:
+        self.docs_bq.start_pool()
+
+    def stop(self) -> None:
+        self.docs_bq.stop_pool()
+
+    def _audio_array_from_bytes(self, raw_bytes: bytes) -> tuple[np.ndarray, int]:
+        audio, sample_rate = sf.read(io.BytesIO(raw_bytes))
+        if audio.ndim > 1:
+            audio = audio[:, 0]
+        audio = audio.astype(np.float32)
+        audio = resample_audio(audio, sample_rate, 16_000)
+        return audio, 16_000
+
+    def _align_page_audios(self, raw_bytes_list: List[bytes]) -> List[str]:
+        """Align page audios in batches via sherpa decode_streams."""
+        if not raw_bytes_list:
+            return []
+
+        arrays: List[np.ndarray] = []
+        for raw_bytes in raw_bytes_list:
+            audio, _ = self._audio_array_from_bytes(raw_bytes)
+            arrays.append(audio)
+
+        aligned: List[str] = []
+        batch_size = self.align_batch_size
+        for i in range(0, len(arrays), batch_size):
+            batch = arrays[i : i + batch_size]
+            results = recognize_audios(self.recognizer, batch, sample_rate=16_000)
+            for result in results:
+                aligned.append(serialize_content_aligned(result.merge_subwords()))
+        return aligned
+
+    def _heard_words_from_audio_b64(self, audio_b64: str) -> List[str]:
+        audio, sample_rate = decode_audio_base64(audio_b64)
+        audio = resample_audio(audio, sample_rate, 16_000)
+        result = recognize_audio(self.recognizer, audio, 16_000)
+        return [seg.word for seg in result.merge_subwords()]
+
+    async def insert_doc(self, req: InsertDocReq) -> StatusResponse:
+        if len(req.pages) != req.pages_number:
+            return StatusResponse(
+                status="error",
+                message=f"Expected {req.pages_number} pages, got {len(req.pages)}",
+            )
+
+        doc_id = str(uuid.uuid4())
+        try:
+            with Timer(f"Inserting doc {req.title}"):
+                doc_bytes = base64.b64decode(req.content)
+                gcs_uri = self.storage.upload_doc(doc_id, req.ext, doc_bytes)
+
+                preview_gcs_uri = None
+                preview_png = render_first_page_preview(doc_bytes, req.ext)
+                if preview_png:
+                    preview_gcs_uri = self.storage.upload_preview(doc_id, preview_png)
+
+                page_audios: List[bytes] = []
+                audio_gcs_uris: List[str] = []
+                for page_number, page_req in enumerate(req.pages, start=1):
+                    audio_bytes = base64.b64decode(page_req.audio)
+                    audio_gcs_uris.append(
+                        self.storage.upload_page_audio(doc_id, page_number, audio_bytes)
+                    )
+                    page_audios.append(audio_bytes)
+                content_aligned_list = self._align_page_audios(page_audios)
+
+                page_records: List[Dict[str, Any]] = []
+                for page_number, page_req in enumerate(req.pages, start=1):
+                    idx = page_number - 1
+                    page_records.append(
+                        Page(
+                            id=str(uuid.uuid4()),
+                            doc_id=doc_id,
+                            page_number=page_number,
+                            content=page_req.text,
+                            audio_gcs_uri=audio_gcs_uris[idx],
+                            content_aligned=content_aligned_list[idx],
+                        ).model_dump()
+                    )
+
+                doc_record = Doc(
+                    id=doc_id,
+                    title=req.title,
+                    ext=req.ext,
+                    pages_number=req.pages_number,
+                    gcs_uri=gcs_uri,
+                    preview_gcs_uri=preview_gcs_uri,
+                ).model_dump()
+
+                self.docs_bq.set_current_table("docs")
+                self.docs_bq.insert_records([doc_record])
+                self.pages_bq.set_current_table("pages")
+                self.pages_bq.insert_records(page_records)
+
+            return StatusResponse(
+                status="success",
+                message="Document inserted successfully",
+                doc_id=doc_id,
+            )
+        except Exception as exc:
+            logger.exception("Failed to insert doc")
+            try:
+                self.storage.delete_doc_assets(doc_id, req.ext)
+            except Exception:
+                pass
+            return StatusResponse(status="error", message=str(exc))
+
+    async def list_docs(self, offset: int = 0, limit: int = 10) -> DocListResponse:
+        offset = max(0, offset)
+        limit = max(1, min(limit, 100))
+
+        self.docs_bq.set_current_table("docs")
+        count_rows = await self.docs_bq.run_queries(DOCS_COUNT)
+        total = int(count_rows[0][0]["total"]) if count_rows and count_rows[0] else 0
+
+        page_query = DOCS_SELECT_ALL.format(
+            dataset_table_id="{dataset_table_id}",
+            limit=limit,
+            offset=offset,
+        )
+        doc_rows = await self.docs_bq.run_queries(page_query)
+        docs = doc_rows[0] if doc_rows and doc_rows[0] else []
+
+        first_by_doc: Dict[str, str] = {}
+        if docs:
+            self.pages_bq.set_current_table("pages")
+            first_page_rows = await self.pages_bq.run_queries(
+                PAGES_SELECT_FIRST,
+                records=[{"doc_id": row["id"]} for row in docs],
+            )
+            for result in first_page_rows:
+                if result:
+                    first_by_doc[result[0]["doc_id"]] = result[0]["content"]
+
+        items: List[DocSummary] = []
+        for row in docs:
+            preview_uri = row.get("preview_gcs_uri")
+            image_url = self.storage.signed_url(preview_uri) if preview_uri else None
+            items.append(
+                DocSummary(
+                    id=row["id"],
+                    title=row["title"],
+                    ext=row["ext"],
+                    pages_number=row["pages_number"],
+                    first_page_content=first_by_doc.get(row["id"]),
+                    first_page_image_url=image_url,
+                )
+            )
+        return DocListResponse(items=items, total=total, offset=offset, limit=limit)
+
+    async def get_doc(self, doc_id: str, include_url: bool = True) -> Optional[DocDetailResponse]:
+        self.docs_bq.set_current_table("docs")
+        doc_rows = await self.docs_bq.run_queries(
+            DOC_SELECT_BY_ID, records=[{"id": doc_id}]
+        )
+        if not doc_rows or not doc_rows[0]:
+            return None
+
+        doc = doc_rows[0][0]
+        self.pages_bq.set_current_table("pages")
+        page_rows = await self.pages_bq.run_queries(
+            PAGES_SELECT_BY_DOC, records=[{"doc_id": doc_id}]
+        )
+        pages = [
+            PageSummary(
+                id=row["id"],
+                page_number=row["page_number"],
+                content=row["content"],
+                audio_url=(
+                    self.storage.signed_url(row["audio_gcs_uri"]) if include_url else None
+                ),
+            )
+            for row in page_rows[0]
+        ]
+        content_url = self.storage.signed_url(doc["gcs_uri"]) if include_url else None
+        return DocDetailResponse(
+            id=doc["id"],
+            title=doc["title"],
+            ext=doc["ext"],
+            pages_number=doc["pages_number"],
+            gcs_uri=doc["gcs_uri"],
+            content_url=content_url,
+            pages=pages,
+        )
+
+    async def get_page(
+        self, doc_id: str, page_number: int, include_url: bool = True
+    ) -> Optional[PageDetailResponse]:
+        self.pages_bq.set_current_table("pages")
+        rows = await self.pages_bq.run_queries(
+            PAGE_SELECT, records=[{"doc_id": doc_id, "page_number": page_number}]
+        )
+        if not rows or not rows[0]:
+            return None
+        row = rows[0][0]
+        audio_url = (
+            self.storage.signed_url(row["audio_gcs_uri"]) if include_url else None
+        )
+        return PageDetailResponse(
+            id=row["id"],
+            doc_id=row["doc_id"],
+            page_number=row["page_number"],
+            content=row["content"],
+            content_aligned=row.get("content_aligned"),
+            audio_gcs_uri=row["audio_gcs_uri"],
+            audio_url=audio_url,
+        )
+
+    async def delete_doc(self, doc_id: str) -> StatusResponse:
+        doc = await self.get_doc(doc_id, include_url=False)
+        if not doc:
+            return StatusResponse(status="error", message="Document not found")
+
+        self.pages_bq.set_current_table("pages")
+        await self.pages_bq.run_queries(PAGES_DELETE_BY_DOC, records=[{"doc_id": doc_id}])
+        self.docs_bq.set_current_table("docs")
+        await self.docs_bq.run_queries(DOC_DELETE_BY_ID, records=[{"id": doc_id}])
+        self.storage.delete_doc_assets(doc_id, doc.ext)
+        return StatusResponse(status="success", message="Document deleted")
+
+    async def check_reading(
+        self,
+        doc_id: str,
+        page_number: int,
+        audio_b64: str,
+        cursor: int = 0,
+    ) -> CheckReadingResponse:
+        page = await self.get_page(doc_id, page_number, include_url=False)
+        if not page:
+            raise ValueError("Page not found")
+
+        expected_words = tokenize_text(page.content)
+        heard_words = self._heard_words_from_audio_b64(audio_b64)
+        new_cursor, raw_mismatches = compare_utterance(
+            expected_words, heard_words, cursor
+        )
+
+        mismatches: List[WordMismatch] = []
+        if raw_mismatches:
+            segments = parse_content_aligned(page.content_aligned)
+
+            for index, expected, heard in raw_mismatches:
+                seg_idx = fuzzy_match_segment_index(expected, segments, index)
+                start = segments[seg_idx].start if seg_idx >= 0 else None
+                end = segments[seg_idx].end if seg_idx >= 0 else None
+                mismatches.append(
+                    WordMismatch(
+                        index=index,
+                        expected=expected,
+                        heard=heard,
+                        start=start,
+                        end=end,
+                    )
+                )
+
+        page_complete = new_cursor >= len(expected_words)
+        return CheckReadingResponse(
+            ok=len(mismatches) == 0,
+            cursor=new_cursor,
+            mismatches=mismatches,
+            page_complete=page_complete,
+        )
+
+    def build_final_score(
+        self,
+        doc_id: str,
+        words_total: int,
+        words_correct: int,
+        pages_completed: int,
+        pages_total: int,
+    ) -> FinalScoreResponse:
+        accuracy = (words_correct / words_total) if words_total else 0.0
+        return FinalScoreResponse(
+            doc_id=doc_id,
+            words_total=words_total,
+            words_correct=words_correct,
+            pages_completed=pages_completed,
+            pages_total=pages_total,
+            accuracy=round(accuracy, 4),
+        )

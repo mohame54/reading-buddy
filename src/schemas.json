@@ -1,0 +1,18 @@
+{
+    "docs":  [
+        {"name": "id", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "title", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "ext", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "pages_number", "type": "INTEGER", "mode": "REQUIRED"},
+        {"name": "gcs_uri", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "preview_gcs_uri", "type": "STRING", "mode": "NULLABLE"}
+    ],
+    "pages": [
+        {"name": "id", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "doc_id", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "page_number", "type": "INTEGER", "mode": "REQUIRED"},
+        {"name": "content", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "audio_gcs_uri", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "content_aligned", "type": "STRING", "mode": "NULLABLE"}
+    ]
+}
