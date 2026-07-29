@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import sherpa_onnx
@@ -8,6 +8,7 @@ import soundfile as sf
 import soxr
 from pydantic import BaseModel
 
+from src.config import get_settings
 from src.utils.decorators import Timer
 from src.utils.decode import WordSegment, merge_sherpa_subwords
 
@@ -19,7 +20,9 @@ class RecognitionResult(BaseModel):
     timestamps: List[float]
     tokens: List[str]
 
-    def merge_subwords(self, frame_dur=0.8) -> List[WordSegment]:
+    def merge_subwords(self, frame_dur: Optional[float] = None) -> List[WordSegment]:
+        if frame_dur is None:
+            frame_dur = get_settings().stt_frame_duration
         return merge_sherpa_subwords(self.tokens, self.timestamps, frame_dur)
 
 

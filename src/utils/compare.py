@@ -9,11 +9,14 @@ from typing import List, Optional, Tuple
 import numpy as np
 import soundfile as sf
 
+from src.config import get_settings
 from src.utils.decode import WordSegment
 
 
 def normalize_word(word: str) -> str:
     word = unicodedata.normalize("NFKC", word)
+    # Strip Arabic diacritics (tashkeel), tatweel, superscript alef, and tajweed marks
+    word = re.sub(r"[\u064B-\u065F\u0640\u0670\u06D6-\u06ED]", "", word)
     word = re.sub(r"[^\w\u0600-\u06FF]", "", word, flags=re.UNICODE)
     return word.strip().lower()
 
@@ -56,7 +59,7 @@ def fuzzy_match_segment_index(
         if score > best_score:
             best_score = score
             best_idx = idx
-    return best_idx if best_score >= 0.6 else -1
+    return best_idx if best_score >= get_settings().stt_fuzzy_match_threshold else -1
 
 
 def compare_utterance(

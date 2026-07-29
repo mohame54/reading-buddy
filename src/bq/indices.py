@@ -40,7 +40,7 @@ class BQEmbeddingIndex(BigQueryIndexBase):
         schema_path: Optional[str] = None,
         embedding_column: Optional[str] = None,
         embedding_dim: Optional[int] = None,
-        pool_num_workers: Optional[int] = 2,
+        pool_num_workers: Optional[int] = 1,
         pool_query_timeout_secs: Optional[int] = None,
         use_shared_pool: Optional[bool] = True
     ):

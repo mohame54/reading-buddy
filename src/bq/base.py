@@ -9,6 +9,7 @@ from typing import List, Optional, Dict, Any, Set
 from dataclasses import dataclass
 from google.api_core.exceptions import TooManyRequests
 from google.cloud import bigquery
+from src.config import get_settings
 from .pool import BigQueryProcessPool
 from .pool_manager import get_shared_pool
 from .utils import load_bq_client, setup_vertex_ai
@@ -60,10 +61,11 @@ class BigQueryIndexBase:
             pool_query_timeout_secs: Query timeout in seconds
             use_shared_pool: If True, uses a shared pool across all indices (recommended)
         """
+        settings = get_settings()
         if pool_num_workers is None:
-            pool_num_workers = int(os.getenv("BQ_POOL_NUM_WORKERS", "1"))
+            pool_num_workers = settings.bq_pool_num_workers
         if pool_query_timeout_secs is None and not use_shared_pool:
-            pool_query_timeout_secs = int(os.getenv("BQ_POOL_QUERY_TIMEOUT", "30"))
+            pool_query_timeout_secs = settings.bq_pool_query_timeout
         self.pool_num_workers = pool_num_workers
         self.pool_timeout = pool_query_timeout_secs
         self.use_shared_pool = use_shared_pool
@@ -417,9 +419,10 @@ class BigQueryIndexBase:
             self._insert_records_load_job_with_retry(records)
 
     def _insert_records_load_job_with_retry(self, records: List[Dict[str, Any]]) -> None:
-        max_attempts = int(os.getenv("BQ_LOAD_JOB_MAX_ATTEMPTS", "5"))
-        retry_delay = float(os.getenv("BQ_LOAD_JOB_RETRY_INITIAL_DELAY_SECS", "1.0"))
-        max_delay = float(os.getenv("BQ_LOAD_JOB_RETRY_MAX_DELAY_SECS", "16.0"))
+        settings = get_settings()
+        max_attempts = settings.bq_load_job_max_attempts
+        retry_delay = settings.bq_load_job_retry_initial_delay
+        max_delay = settings.bq_load_job_retry_max_delay
 
         for attempt in range(1, max_attempts + 1):
             try:

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import soundfile as sf
 
+from src.config import get_settings
 from src.bq.base import BigQueryIndexBase
 from src.bq.queries import (
     DOC_DELETE_BY_ID,
@@ -54,8 +55,6 @@ from src.utils.preview import render_first_page_preview, render_page_preview
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ALIGN_BATCH_SIZE = int(os.getenv("ALIGN_BATCH_SIZE", 8))
-
 
 class STTService:
     def __init__(
@@ -63,7 +62,7 @@ class STTService:
         model_dir: str,
         storage: StorageService,
         num_threads: int = 2,
-        align_batch_size: int = DEFAULT_ALIGN_BATCH_SIZE,
+        align_batch_size: int = get_settings().stt_align_batch_size,
         schema_path: Optional[str] = None,
     ):
         self.model_dir = model_dir

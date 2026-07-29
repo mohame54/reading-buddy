@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.config import get_settings
 from src.api import admin, docs, reading
 from src.services.bootstrap import bootstrap_tables
 from src.services.storage_service import StorageService
@@ -14,7 +15,8 @@ from src.utils.decorators import Timer
 
 logger = logging.getLogger(__name__)
 
-_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+_settings = get_settings()
+_log_level = _settings.log_level
 logging.basicConfig(
     level=getattr(logging, _log_level, logging.INFO),
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
@@ -40,17 +42,16 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings = get_settings()
     model_dir = os.getenv("MODEL_DIR", "models")
-    num_threads = int(os.getenv("STT_NUM_THREADS", "2"))
-    align_batch_size = int(os.getenv("STT_ALIGN_BATCH_SIZE", "4"))
     bucket_name = os.environ["GCS_BUCKET"]
 
     storage = StorageService(bucket_name=bucket_name)
     stt_service = STTService(
         model_dir=model_dir,
         storage=storage,
-        num_threads=num_threads,
-        align_batch_size=align_batch_size,
+        num_threads=settings.stt_num_threads,
+        align_batch_size=settings.stt_align_batch_size,
     )
     bootstrap_tables(stt_service.docs_bq, stt_service.pages_bq)
     stt_service.start()

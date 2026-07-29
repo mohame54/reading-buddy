@@ -7,6 +7,8 @@ import queue
 import time
 from typing import Optional
 from multiprocessing import Process, Queue
+
+from src.config import get_settings
 from .process_work_loop import worker_loop
 
 
@@ -52,14 +54,14 @@ class BigQueryProcessPool:
         - For shared pools across multiple tables, use pool_manager.get_shared_pool()
     """
     
-    def __init__(self,proj_id:str, num_workers: Optional[int] = 2, query_timeout: int = 30, max_queue_size: Optional[int] = None):
+    def __init__(self,proj_id:str, num_workers: Optional[int] = None, query_timeout: Optional[int] = None, max_queue_size: Optional[int] = None):
         """
         Initialize BigQuery process pool.
         
         Args:
             proj_id: Google Cloud project ID for BigQuery operations
-            num_workers: Number of worker processes to spawn (default: 2)
-            query_timeout: Default timeout for queries in seconds (default: 30)
+            num_workers: Number of worker processes to spawn (default: `BQ_POOL_NUM_WORKERS` or 1)
+            query_timeout: Default timeout for queries in seconds (default: `BQ_POOL_QUERY_TIMEOUT` or 30)
             max_queue_size: Maximum number of tasks in queue (None = unlimited, helps prevent memory buildup)
         
         Note:
@@ -67,6 +69,13 @@ class BigQueryProcessPool:
             - Each worker process adds ~100-200MB of memory overhead
             - Large result sets are loaded into memory, consider using LIMIT clauses
         """
+        settings = get_settings()
+        if num_workers is None:
+            num_workers = settings.bq_pool_num_workers
+        if query_timeout is None:
+            query_timeout = settings.bq_pool_query_timeout
+        if max_queue_size is None:
+            max_queue_size = settings.bq_pool_max_queue_size
         self.num_workers = num_workers
         self.query_timeout = query_timeout
         self.max_queue_size = max_queue_size
@@ -110,7 +119,7 @@ class BigQueryProcessPool:
         
         # Wait for workers to be ready (with timeout)
         self.logger.info(f"⏳ Waiting for {self.num_workers} worker(s) to initialize...")
-        ready_timeout = float(os.getenv("BQ_POOL_READY_TIMEOUT", "5"))
+        ready_timeout = get_settings().bq_pool_ready_timeout
         start_wait = time.time()
         
         while self._workers_ready < self.num_workers:
@@ -239,7 +248,7 @@ class BigQueryProcessPool:
         return cleanup_count
 
     async def _submit_task(self, task_id: str, queries: list, job_configs: list, timeout: int) -> None:
-        put_timeout = float(os.getenv("BQ_POOL_QUEUE_PUT_TIMEOUT_SECS", "10"))
+        put_timeout = get_settings().bq_pool_queue_put_timeout
         try:
             await asyncio.to_thread(
                 self.task_queue.put,

@@ -1,6 +1,7 @@
-import os
 import logging
 from typing import Optional
+
+from src.config import get_settings
 from .pool import BigQueryProcessPool
 
 logger = logging.getLogger(__name__)
@@ -63,8 +64,8 @@ class BigQueryPoolManager:
     def get_pool(
         self, 
         proj_id: str, 
-        num_workers: int = 2, 
-        query_timeout: int = 30,
+        num_workers: Optional[int] = None,
+        query_timeout: Optional[int] = None,
         auto_start: bool = True
     ) -> BigQueryProcessPool:
         """
@@ -80,11 +81,14 @@ class BigQueryPoolManager:
             Shared BigQueryProcessPool instance
         """
         pool_key = f"{proj_id}"
+        settings = get_settings()
+        if num_workers is None:
+            num_workers = settings.bq_pool_num_workers
+        if query_timeout is None:
+            query_timeout = settings.bq_pool_query_timeout
         
         if pool_key not in self._pools:
-            # Get max_queue_size from environment (default: 50, set to 0 for unlimited)
-            max_queue_size = int(os.getenv("BQ_POOL_MAX_QUEUE_SIZE", "50"))
-            max_queue_size = None if max_queue_size == 0 else max_queue_size
+            max_queue_size = settings.bq_pool_max_queue_size
             
             logger.debug(
                 f"🏗️  Creating NEW shared pool for project '{proj_id}' with {num_workers} workers, "
@@ -196,7 +200,7 @@ def get_shared_pool(
     
     Args:
         proj_id: Google Cloud project ID
-        num_workers: Number of workers (only used for new pools, defaults to env var or 2)
+        num_workers: Number of workers (only used for new pools, defaults to env var or 1)
                     Keep this low (2-4) to minimize memory overhead.
                     Each worker process adds ~100-200MB memory overhead.
         query_timeout: Query timeout (only used for new pools, defaults to env var or 30)
@@ -211,15 +215,15 @@ def get_shared_pool(
         - 8+ workers: ~800MB+ overhead (only if you have high query volume)
         
     Environment Variables:
-        - BQ_POOL_NUM_WORKERS: Number of worker processes (default: 2)
+        - BQ_POOL_NUM_WORKERS: Number of worker processes (default: 1)
         - BQ_POOL_QUERY_TIMEOUT: Query timeout in seconds (default: 30)
         - BQ_POOL_MAX_QUEUE_SIZE: Max pending tasks in queue (default: 50, set to 0 for unlimited)
     """
     if num_workers is None:
-        num_workers = int(os.getenv("BQ_POOL_NUM_WORKERS", "1"))
+        num_workers = get_settings().bq_pool_num_workers
     
     if query_timeout is None:
-        query_timeout = int(os.getenv("BQ_POOL_QUERY_TIMEOUT", "30"))
+        query_timeout = get_settings().bq_pool_query_timeout
     
     # Warn if worker count is very high
     if num_workers > 8:

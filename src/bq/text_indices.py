@@ -3,6 +3,7 @@ import time
 import logging
 from typing import List, Optional, Literal, Dict, Any
 from vertexai.language_models import TextEmbeddingModel
+from src.config import get_settings
 from .indices import BQEmbeddingIndex
 from .utils import get_gemini_embeds, setup_vertex_ai
 from .queries import VEC_SEARCH_QUERY, VEC_SEARCH_QUERY_CONDITIONED
@@ -42,7 +43,7 @@ class BQTextEmbeddingIndex(BQEmbeddingIndex):
         start_time = time.time()
         logger.info(f"🤖 Initializing Text Embedding Index with model: {txt_model_name}")
         if pool_num_workers is None:
-            pool_num_workers = int(os.getenv("BQ_POOL_NUM_WORKERS", "1"))
+            pool_num_workers = get_settings().bq_pool_num_workers
         super().__init__(
             proj_dataset_id=proj_dataset_id,
             schema_key=schema_key,
