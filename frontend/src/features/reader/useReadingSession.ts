@@ -5,17 +5,14 @@ import type {
   ReaderPhase,
   WordMismatch,
 } from "../../types/api";
-import { playWordClip } from "./playWordClip";
 
 interface UseReadingSessionOptions {
   docId: string;
-  audioMap: Map<number, HTMLAudioElement>;
   onScore: (score: FinalScoreResponse) => void;
 }
 
-export function useReadingSession({ docId, audioMap, onScore }: UseReadingSessionOptions) {
+export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) {
   const sessionRef = useRef<ReadingSession | null>(null);
-  const audioMapRef = useRef(audioMap);
   const onScoreRef = useRef(onScore);
   const pageNumberRef = useRef(1);
 
@@ -30,10 +27,6 @@ export function useReadingSession({ docId, audioMap, onScore }: UseReadingSessio
   const [mismatch, setMismatch] = useState<WordMismatch | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
-
-  useEffect(() => {
-    audioMapRef.current = audioMap;
-  }, [audioMap]);
 
   useEffect(() => {
     onScoreRef.current = onScore;
@@ -66,10 +59,6 @@ export function useReadingSession({ docId, audioMap, onScore }: UseReadingSessio
         setMismatch(m);
         setCursor(msg.cursor);
         setPhase("retry");
-        if (m?.start != null && m?.end != null) {
-          const audio = audioMapRef.current.get(pageNumberRef.current);
-          if (audio) playWordClip(audio, m.start, m.end);
-        }
       },
       onPageComplete: (msg) => {
         setCursor(msg.cursor);

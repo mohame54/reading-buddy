@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { getDoc } from "../../api/catalog";
 import { ApiError } from "../../api/client";
 import type { DocDetailResponse, FinalScoreResponse } from "../../types/api";
 import { AppShell, ErrorBanner, LoadingState, PageLayout } from "../../components/Layout";
-import { prefetchAudio } from "./playWordClip";
+import {
+  playFullPage,
+  playMismatchClip,
+  prefetchAudio,
+  stopActiveClip,
+} from "./playWordClip";
 import { useReadingSession } from "./useReadingSession";
 import { useRecorder } from "./useRecorder";
 
@@ -18,6 +23,9 @@ function ReaderSession({
   audioMap: Map<number, HTMLAudioElement>;
 }) {
   const navigate = useNavigate();
+  const audioMapRef = useRef(audioMap);
+  const [pageAudioPlaying, setPageAudioPlaying] = useState(false);
+  const [audioLoadError, setAudioLoadError] = useState<string | null>(null);
 
   const handleScore = useCallback(
     (score: FinalScoreResponse) => {
@@ -44,9 +52,63 @@ function ReaderSession({
     setPhase,
   } = useReadingSession({
     docId,
-    audioMap,
     onScore: handleScore,
   });
+
+  const pageAudioUrl =
+    doc.pages.find((page) => page.page_number === pageNumber)?.audio_url ?? null;
+  const hasPageAudio = Boolean(pageAudioUrl);
+
+  useEffect(() => {
+    audioMapRef.current = audioMap;
+  }, [audioMap]);
+
+  const ensurePageAudio = useCallback(async () => {
+    if (!pageAudioUrl) return null;
+
+    const cached = audioMapRef.current.get(pageNumber);
+    if (cached) return cached;
+
+    try {
+      const audio = await prefetchAudio(pageAudioUrl);
+      audioMapRef.current.set(pageNumber, audio);
+      setAudioLoadError(null);
+      return audio;
+    } catch {
+      setAudioLoadError("Could not load page audio.");
+      return null;
+    }
+  }, [pageAudioUrl, pageNumber]);
+
+  const handlePlayPageAudio = useCallback(async () => {
+    const audio = await ensurePageAudio();
+    if (!audio) return;
+
+    if (!audio.paused) {
+      stopActiveClip();
+      audio.pause();
+      setPageAudioPlaying(false);
+      return;
+    }
+
+    const played = await playFullPage(audio);
+    if (played) {
+      setPageAudioPlaying(true);
+      audio.onended = () => setPageAudioPlaying(false);
+    }
+  }, [ensurePageAudio]);
+
+  const handlePlayMismatchClip = useCallback(async () => {
+    if (!mismatch) return;
+    const audio = await ensurePageAudio();
+    if (!audio) return;
+    await playMismatchClip(audio, mismatch);
+  }, [ensurePageAudio, mismatch]);
+
+  useEffect(() => {
+    setPageAudioPlaying(false);
+    setAudioLoadError(null);
+  }, [pageNumber]);
 
   const { recording, error: recorderError, start, stop } = useRecorder();
 
@@ -102,6 +164,19 @@ function ReaderSession({
         <p className="hint reader-image-fallback">Page image unavailable</p>
       )}
 
+      {hasPageAudio && (
+        <div className="reader-audio-bar">
+          <button
+            type="button"
+            className="btn"
+            onClick={handlePlayPageAudio}
+          >
+            {pageAudioPlaying ? "Stop narration" : "Listen to page"}
+          </button>
+          {audioLoadError && <p className="hint reader-audio-error">{audioLoadError}</p>}
+        </div>
+      )}
+
       <div className="reader-text arabic-text" dir="auto">
         {hasText ? (
           highlightedWords
@@ -136,6 +211,15 @@ function ReaderSession({
             )}
           </p>
           <p className="hint">Listen to the correct pronunciation and try again.</p>
+          {hasPageAudio && (
+            <button
+              type="button"
+              className="btn feedback-listen-btn"
+              onClick={handlePlayMismatchClip}
+            >
+              Hear correct word
+            </button>
+          )}
         </div>
       )}
 

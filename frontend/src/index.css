@@ -341,6 +341,18 @@ a:hover {
   text-align: center;
 }
 
+.reader-audio-bar {
+  margin-bottom: 1rem;
+}
+
+.reader-audio-error {
+  margin: 0.5rem 0 0;
+}
+
+.feedback-listen-btn {
+  margin-top: 0.75rem;
+}
+
 .reader-text {
   padding: 1.5rem;
   background: var(--bg-elevated);
