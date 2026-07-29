@@ -3,8 +3,14 @@ from typing import List, Optional
 
 
 class InsertPageReq(BaseModel):
-    text: str = Field(..., description="The text content of the page")
-    audio: str = Field(..., description="The base64 audio encoded content of the page")
+    text: str = Field(
+        default="",
+        description="The text content of the page (empty for picture-only / non-reading pages)",
+    )
+    audio: str | None = Field(
+        default=None,
+        description="Base64 reference audio; required when text is non-empty, optional otherwise",
+    )
 
 
 class InsertDocReq(BaseModel):
@@ -42,6 +48,7 @@ class PageSummary(BaseModel):
     page_number: int
     content: str
     audio_url: str | None = None
+    has_text: bool = True
 
 
 class DocDetailResponse(BaseModel):
@@ -60,8 +67,9 @@ class PageDetailResponse(BaseModel):
     page_number: int
     content: str
     content_aligned: str | None = None
-    audio_gcs_uri: str
+    audio_gcs_uri: str = ""
     audio_url: str | None = None
+    has_text: bool = True
 
 
 class WordMismatch(BaseModel):
@@ -75,7 +83,10 @@ class WordMismatch(BaseModel):
 class CheckReadingReq(BaseModel):
     doc_id: str
     page_number: int
-    audio: str
+    audio: str = Field(
+        default="",
+        description="Base64 child utterance; ignored for textless pages",
+    )
     cursor: int = 0
 
 

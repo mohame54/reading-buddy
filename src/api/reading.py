@@ -13,12 +13,48 @@ from src.data.reqs import (
 )
 from src.services.reading_session import ReadingSession
 from src.services.stt_service import STTService
-from src.utils.compare import tokenize_text
+from src.utils.compare import page_has_text, tokenize_text
 from src.utils.decorators import Timer
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reading", tags=["reading"])
+
+
+async def _send_page_and_maybe_complete(
+    send,
+    session: ReadingSession,
+    page,
+) -> None:
+    """Send page payload; textless pages are immediately marked complete."""
+    words_on_page = len(tokenize_text(page.content))
+    session.reset_page(page.page_number, words_on_page)
+    await send(
+        {
+            "type": "page",
+            "doc_id": session.doc_id,
+            "page_number": page.page_number,
+            "content": page.content,
+            "pages_total": session.pages_total,
+            "has_text": page_has_text(page.content),
+        }
+    )
+    if words_on_page > 0:
+        return
+
+    # Empty / picture-only page: no reading required.
+    session.apply_check(0, 0, page_complete=True)
+    if session.page_number >= session.pages_total:
+        score = session.to_score()
+        await send({"type": "score", **score.model_dump()})
+    else:
+        await send(
+            {
+                "type": "page_complete",
+                "page_number": session.page_number,
+                "cursor": 0,
+            }
+        )
 
 
 @router.post("/check", response_model=CheckReadingResponse)
@@ -83,17 +119,9 @@ async def reading_session(websocket: WebSocket):
                         page_number=page_number,
                         pages_total=doc.pages_number,
                     )
-                    session.reset_page(page_number, len(tokenize_text(page.content)))
                     start_extra["pages_total"] = doc.pages_number
-                    await send(
-                        {
-                            "type": "page",
-                            "doc_id": doc_id,
-                            "page_number": page_number,
-                            "content": page.content,
-                            "pages_total": doc.pages_number,
-                        }
-                    )
+                    start_extra["has_text"] = page_has_text(page.content)
+                    await _send_page_and_maybe_complete(send, session, page)
                 continue
 
             if session is None:
@@ -107,6 +135,25 @@ async def reading_session(websocket: WebSocket):
                     "cursor": session.cursor,
                 }
                 with Timer("WebSocket audio check", logger=logger, extra=audio_extra):
+                    # Textless pages were already completed on page load.
+                    if session.last_words_on_page == 0:
+                        if session.page_number >= session.pages_total:
+                            outcome = "score"
+                            score = session.to_score()
+                            await send({"type": "score", **score.model_dump()})
+                        else:
+                            outcome = "page_complete"
+                            await send(
+                                {
+                                    "type": "page_complete",
+                                    "page_number": session.page_number,
+                                    "cursor": 0,
+                                }
+                            )
+                        audio_extra["outcome"] = outcome
+                        audio_extra["empty_page"] = True
+                        continue
+
                     previous_cursor = session.cursor
                     result = await stt.check_reading(
                         session.doc_id,
@@ -166,19 +213,9 @@ async def reading_session(websocket: WebSocket):
                     if not page:
                         await send({"type": "error", "message": "Page not found"})
                         continue
-                    session.reset_page(
-                        session.page_number, len(tokenize_text(page.content))
-                    )
+                    next_extra["has_text"] = page_has_text(page.content)
                     next_extra["outcome"] = "page"
-                    await send(
-                        {
-                            "type": "page",
-                            "doc_id": session.doc_id,
-                            "page_number": session.page_number,
-                            "content": page.content,
-                            "pages_total": session.pages_total,
-                        }
-                    )
+                    await _send_page_and_maybe_complete(send, session, page)
                 continue
 
             if msg_type == "end":

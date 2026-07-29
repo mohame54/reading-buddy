@@ -19,7 +19,11 @@ def normalize_word(word: str) -> str:
 
 
 def tokenize_text(text: str) -> List[str]:
-    return [w for w in re.split(r"\s+", text.strip()) if w]
+    return [w for w in re.split(r"\s+", (text or "").strip()) if w]
+
+
+def page_has_text(text: str | None) -> bool:
+    return bool(tokenize_text(text or ""))
 
 
 def parse_content_aligned(content_aligned: str | None) -> List[WordSegment]:

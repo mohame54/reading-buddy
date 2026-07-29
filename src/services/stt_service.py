@@ -37,6 +37,7 @@ from src.utils.compare import (
     compare_utterance,
     decode_audio_base64,
     fuzzy_match_segment_index,
+    page_has_text,
     parse_content_aligned,
     serialize_content_aligned,
     tokenize_text,
@@ -113,8 +114,13 @@ class STTService:
         audio = resample_audio(audio, sample_rate, 16_000)
         return audio, 16_000
 
-    def _align_page_audios(self, raw_bytes_list: List[bytes]) -> List[str]:
-        """Align page audios in batches via sherpa decode_streams."""
+    def _align_page_audios(
+        self, raw_bytes_list: List[Optional[bytes]]
+    ) -> List[Optional[str]]:
+        """Align page audios in batches via sherpa decode_streams.
+
+        Entries that are None (textless / no-audio pages) keep None and are skipped.
+        """
         if not raw_bytes_list:
             return []
 
@@ -123,15 +129,17 @@ class STTService:
             "batch_size": self.align_batch_size,
         }
         with Timer("Align page audios", logger=logger, extra=align_extra):
-            arrays: List[np.ndarray] = []
-            for raw_bytes in raw_bytes_list:
+            aligned: List[Optional[str]] = [None] * len(raw_bytes_list)
+            index_and_audio: List[tuple[int, np.ndarray]] = []
+            for idx, raw_bytes in enumerate(raw_bytes_list):
+                if raw_bytes is None:
+                    continue
                 audio, _ = self._audio_array_from_bytes(raw_bytes)
-                arrays.append(audio)
+                index_and_audio.append((idx, audio))
 
-            aligned: List[str] = []
             batch_size = self.align_batch_size
-            for i in range(0, len(arrays), batch_size):
-                batch = arrays[i : i + batch_size]
+            for i in range(0, len(index_and_audio), batch_size):
+                batch = index_and_audio[i : i + batch_size]
                 batch_num = i // batch_size + 1
                 with Timer(
                     "Align page audio batch",
@@ -139,9 +147,17 @@ class STTService:
                     level=logging.DEBUG,
                     extra={"batch": batch_num, "size": len(batch)},
                 ):
-                    results = recognize_audios(self.recognizer, batch, sample_rate=16_000)
-                    for result in results:
-                        aligned.append(serialize_content_aligned(result.merge_subwords()))
+                    results = recognize_audios(
+                        self.recognizer,
+                        [audio for _, audio in batch],
+                        sample_rate=16_000,
+                    )
+                    for (orig_idx, _), result in zip(batch, results):
+                        aligned[orig_idx] = serialize_content_aligned(
+                            result.merge_subwords()
+                        )
+            align_extra["aligned"] = sum(1 for a in aligned if a is not None)
+            align_extra["skipped"] = sum(1 for a in aligned if a is None)
         return aligned
 
     def _heard_words_from_audio_b64(self, audio_b64: str) -> List[str]:
@@ -157,6 +173,16 @@ class STTService:
                 status="error",
                 message=f"Expected {req.pages_number} pages, got {len(req.pages)}",
             )
+
+        for page_number, page_req in enumerate(req.pages, start=1):
+            if page_has_text(page_req.text) and not (page_req.audio and page_req.audio.strip()):
+                return StatusResponse(
+                    status="error",
+                    message=(
+                        f"Page {page_number} has text but no reference audio. "
+                        "Audio is required for pages with reading text."
+                    ),
+                )
 
         doc_id = str(uuid.uuid4())
         try:
@@ -177,21 +203,31 @@ class STTService:
                     if preview_png:
                         preview_gcs_uri = self.storage.upload_preview(doc_id, preview_png)
 
-                    page_audios: List[bytes] = []
+                    page_audios: List[Optional[bytes]] = []
                     audio_gcs_uris: List[str] = []
                     total_audio_bytes = 0
                     for page_number, page_req in enumerate(req.pages, start=1):
-                        audio_bytes = base64.b64decode(page_req.audio)
-                        total_audio_bytes += len(audio_bytes)
-                        audio_gcs_uris.append(
-                            self.storage.upload_page_audio(doc_id, page_number, audio_bytes)
-                        )
-                        page_audios.append(audio_bytes)
+                        has_text = page_has_text(page_req.text)
+                        audio_b64 = (page_req.audio or "").strip()
+                        if has_text or audio_b64:
+                            audio_bytes = base64.b64decode(audio_b64)
+                            total_audio_bytes += len(audio_bytes)
+                            audio_gcs_uris.append(
+                                self.storage.upload_page_audio(
+                                    doc_id, page_number, audio_bytes
+                                )
+                            )
+                            # Only align pages that have reading text.
+                            page_audios.append(audio_bytes if has_text else None)
+                        else:
+                            audio_gcs_uris.append("")
+                            page_audios.append(None)
                     logger.debug(
-                        "Uploaded page audios doc_id=%s count=%d total_bytes=%d",
+                        "Uploaded page audios doc_id=%s count=%d total_bytes=%d skipped=%d",
                         doc_id,
-                        len(page_audios),
+                        sum(1 for u in audio_gcs_uris if u),
                         total_audio_bytes,
+                        sum(1 for a in page_audios if a is None),
                     )
 
                 content_aligned_list = self._align_page_audios(page_audios)
@@ -204,7 +240,7 @@ class STTService:
                             id=str(uuid.uuid4()),
                             doc_id=doc_id,
                             page_number=page_number,
-                            content=page_req.text,
+                            content=(page_req.text or "").strip(),
                             audio_gcs_uri=audio_gcs_uris[idx],
                             content_aligned=content_aligned_list[idx],
                         ).model_dump()
@@ -310,10 +346,13 @@ class STTService:
                 PageSummary(
                     id=row["id"],
                     page_number=row["page_number"],
-                    content=row["content"],
+                    content=row["content"] or "",
                     audio_url=(
-                        self.storage.signed_url(row["audio_gcs_uri"]) if include_url else None
+                        self.storage.signed_url(row["audio_gcs_uri"])
+                        if include_url and row.get("audio_gcs_uri")
+                        else None
                     ),
+                    has_text=page_has_text(row.get("content")),
                 )
                 for row in page_rows[0]
             ]
@@ -343,18 +382,24 @@ class STTService:
                 extra["found"] = False
                 return None
             row = rows[0][0]
+            content = row.get("content") or ""
+            audio_gcs_uri = row.get("audio_gcs_uri") or ""
             audio_url = (
-                self.storage.signed_url(row["audio_gcs_uri"]) if include_url else None
+                self.storage.signed_url(audio_gcs_uri)
+                if include_url and audio_gcs_uri
+                else None
             )
             extra["found"] = True
+            extra["has_text"] = page_has_text(content)
             return PageDetailResponse(
                 id=row["id"],
                 doc_id=row["doc_id"],
                 page_number=row["page_number"],
-                content=row["content"],
+                content=content,
                 content_aligned=row.get("content_aligned"),
-                audio_gcs_uri=row["audio_gcs_uri"],
+                audio_gcs_uri=audio_gcs_uri,
                 audio_url=audio_url,
+                has_text=page_has_text(content),
             )
 
     async def delete_doc(self, doc_id: str) -> StatusResponse:
@@ -391,6 +436,19 @@ class STTService:
                 raise ValueError("Page not found")
 
             expected_words = tokenize_text(page.content)
+            # Picture-only / empty pages are already complete — no STT needed.
+            if not expected_words:
+                check_extra["new_cursor"] = 0
+                check_extra["mismatches"] = 0
+                check_extra["page_complete"] = True
+                check_extra["empty_page"] = True
+                return CheckReadingResponse(
+                    ok=True,
+                    cursor=0,
+                    mismatches=[],
+                    page_complete=True,
+                )
+
             heard_words = self._heard_words_from_audio_b64(audio_b64)
             logger.debug(
                 "Check reading heard_words=%d expected_words=%d",

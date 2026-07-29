@@ -6,7 +6,7 @@ class Page(BaseModel):
     doc_id: str
     page_number: int
     content: str
-    audio_gcs_uri: str
+    audio_gcs_uri: str = ""
     content_aligned: str | None = None
 
 
