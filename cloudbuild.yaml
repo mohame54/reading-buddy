@@ -52,8 +52,8 @@ substitutions:
   REPO_NAME: reading-buddy
   _DEPLOY_REGION: europe-west1
   # Backend API URL — set to your deployed reading-buddy API host
-  _VITE_API_BASE: https://reading-buddy-REPLACE.run.app
-  _VITE_WS_BASE: wss://reading-buddy-REPLACE.run.app
+  _VITE_API_BASE: https://reading-buddy-435679247323.europe-west1.run.app
+  _VITE_WS_BASE: wss://reading-buddy-435679247323.europe-west1.run.app
 
 tags:
   - gcp-cloud-build-deploy-cloud-run
