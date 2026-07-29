@@ -17,7 +17,14 @@ def normalize_word(word: str) -> str:
     word = unicodedata.normalize("NFKC", word)
     # Strip Arabic diacritics (tashkeel), tatweel, superscript alef, and tajweed marks
     word = re.sub(r"[\u064B-\u065F\u0640\u0670\u06D6-\u06ED]", "", word)
-    word = re.sub(r"[^\w\u0600-\u06FF]", "", word, flags=re.UNICODE)
+    # Keep letters/digits only. Arabic punctuation (، ؟ ؛ ۔) lives in U+0600–U+06FF
+    # so a script-range keep-filter would incorrectly retain it.
+    word = "".join(
+        c
+        for c in word
+        if unicodedata.category(c).startswith(("L", "N"))
+        and unicodedata.category(c) != "Lm"
+    )
     return word.strip().lower()
 
 
