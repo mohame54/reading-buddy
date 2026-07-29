@@ -15,6 +15,7 @@ dependencies = [
     "pypdfium2>=5.12.1",
     "python-multipart>=0.0.20",
     "sherpa-onnx>=1.13.4",
+    "sherpa-onnx-core>=1.13.4",
     "soundfile>=0.14.0",
     "soxr>=1.1.0",
     "uvicorn[standard]>=0.34.0",

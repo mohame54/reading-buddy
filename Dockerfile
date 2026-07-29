@@ -46,7 +46,8 @@ COPY --from=builder /app /app
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    VIRTUAL_ENV=/app/.venv
+    VIRTUAL_ENV=/app/.venv \
+    LD_LIBRARY_PATH="/app/.venv/lib/python3.13/site-packages/sherpa_onnx/lib"
 
 # Expose the port the app runs on
 EXPOSE 8080
