@@ -35,6 +35,7 @@ async def _send_page_and_maybe_complete(
             "doc_id": session.doc_id,
             "page_number": page.page_number,
             "content": page.content,
+            "image_url": page.image_url,
             "pages_total": session.pages_total,
             "has_text": page_has_text(page.content),
         }
@@ -110,7 +111,9 @@ async def reading_session(websocket: WebSocket):
                     if not doc:
                         await send({"type": "error", "message": "Document not found"})
                         continue
-                    page = await stt.get_page(doc_id, page_number, include_url=False)
+                    page = await stt.get_page(
+                        doc_id, page_number, include_url=False, ensure_image=True
+                    )
                     if not page:
                         await send({"type": "error", "message": "Page not found"})
                         continue
@@ -208,7 +211,7 @@ async def reading_session(websocket: WebSocket):
                     session.page_number += 1
                     next_extra["to_page"] = session.page_number
                     page = await stt.get_page(
-                        session.doc_id, session.page_number, include_url=False
+                        session.doc_id, session.page_number, include_url=False, ensure_image=True
                     )
                     if not page:
                         await send({"type": "error", "message": "Page not found"})

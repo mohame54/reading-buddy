@@ -48,6 +48,7 @@ class PageSummary(BaseModel):
     page_number: int
     content: str
     audio_url: str | None = None
+    image_url: str | None = None
     has_text: bool = True
 
 
@@ -69,6 +70,7 @@ class PageDetailResponse(BaseModel):
     content_aligned: str | None = None
     audio_gcs_uri: str = ""
     audio_url: str | None = None
+    image_url: str | None = None
     has_text: bool = True
 
 

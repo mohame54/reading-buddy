@@ -22,7 +22,7 @@ All messages are **JSON text frames**.
 
 | `type` | When |
 |--------|------|
-| `page` | After `start` or `next_page` — includes `content`, `page_number`, `pages_total` |
+| `page` | After `start` or `next_page` — includes `content`, `image_url`, `page_number`, `pages_total` |
 | `ok` | Utterance correct, more words remain — includes `cursor` |
 | `feedback` | Wrong word — includes `mismatches[]` and `cursor` |
 | `page_complete` | Page finished (not last page) |
@@ -37,9 +37,13 @@ All messages are **JSON text frames**.
   "doc_id": "550e8400-e29b-41d4-a716-446655440000",
   "page_number": 1,
   "content": "مرحبا بكم في قصتنا",
-  "pages_total": 2
+  "image_url": "https://storage.googleapis.com/...",
+  "pages_total": 2,
+  "has_text": true
 }
 ```
+
+`image_url` is a signed URL to a cached PNG of the PDF page (rendered on first request, stored at `page_images/{doc_id}/{page_number}.png`). It may be `null` if rendering fails or the format is unsupported. `content` remains available for word-level grading and progress UI.
 
 ### `feedback`
 
@@ -119,7 +123,7 @@ ws.onmessage = (event) => {
 
   switch (msg.type) {
     case "page":
-      renderPage(msg.content, msg.page_number, msg.pages_total);
+      renderPage(msg.image_url, msg.content, msg.page_number, msg.pages_total);
       break;
     case "feedback": {
       const m = msg.mismatches[0];

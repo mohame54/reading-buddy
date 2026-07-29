@@ -65,6 +65,23 @@ class StorageService:
             blob.upload_from_string(png_bytes, content_type="image/png")
         return self._gcs_uri(object_name)
 
+    def upload_page_image(self, doc_id: str, page_number: int, png_bytes: bytes) -> str:
+        object_name = f"page_images/{doc_id}/{page_number}.png"
+        with Timer(
+            "Upload page image",
+            logger=logger,
+            level=logging.DEBUG,
+            extra={
+                "doc_id": doc_id,
+                "page": page_number,
+                "object": object_name,
+                "size_bytes": len(png_bytes),
+            },
+        ):
+            blob = self.bucket.blob(object_name)
+            blob.upload_from_string(png_bytes, content_type="image/png")
+        return self._gcs_uri(object_name)
+
     def download_bytes(self, gcs_uri: str) -> bytes:
         object_name = gcs_uri.split(f"gs://{self.bucket_name}/", 1)[-1]
         extra = {"object": object_name}
@@ -102,6 +119,14 @@ class StorageService:
                 except Exception:
                     pass
             for blob in self.client.list_blobs(self.bucket_name, prefix=f"audios/{doc_id}/"):
+                try:
+                    blob.delete()
+                    deleted += 1
+                except Exception:
+                    pass
+            for blob in self.client.list_blobs(
+                self.bucket_name, prefix=f"page_images/{doc_id}/"
+            ):
                 try:
                     blob.delete()
                     deleted += 1

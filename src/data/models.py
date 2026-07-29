@@ -8,6 +8,7 @@ class Page(BaseModel):
     content: str
     audio_gcs_uri: str = ""
     content_aligned: str | None = None
+    image_gcs_uri: str | None = None
 
 
 class Doc(BaseModel):

@@ -15,6 +15,7 @@ from src.bq.queries import (
     DOCS_COUNT,
     DOCS_SELECT_ALL,
     PAGE_SELECT,
+    PAGE_UPDATE_IMAGE_GCS_URI,
     PAGES_DELETE_BY_DOC,
     PAGES_SELECT_BY_DOC,
     PAGES_SELECT_FIRST,
@@ -49,7 +50,7 @@ from src.utils.models import (
     recognize_audios,
     resample_audio,
 )
-from src.utils.preview import render_first_page_preview
+from src.utils.preview import render_first_page_preview, render_page_preview
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,65 @@ class STTService:
             audio = resample_audio(audio, sample_rate, 16_000)
             result = recognize_audio(self.recognizer, audio, 16_000)
         return [seg.word for seg in result.merge_subwords()]
+
+    async def _ensure_page_image(
+        self,
+        doc_id: str,
+        page_number: int,
+        page_row: Dict[str, Any],
+        doc_row: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        image_gcs_uri = (page_row.get("image_gcs_uri") or "").strip()
+        if image_gcs_uri:
+            return image_gcs_uri
+
+        if doc_row is None:
+            self.docs_bq.set_current_table("docs")
+            doc_rows = await self.docs_bq.run_queries(
+                DOC_SELECT_BY_ID, records=[{"id": doc_id}]
+            )
+            if not doc_rows or not doc_rows[0]:
+                return None
+            doc_row = doc_rows[0][0]
+
+        try:
+            doc_bytes = self.storage.download_bytes(doc_row["gcs_uri"])
+            png_bytes = render_page_preview(
+                doc_bytes, doc_row["ext"], page_number
+            )
+            if not png_bytes:
+                return None
+            image_gcs_uri = self.storage.upload_page_image(
+                doc_id, page_number, png_bytes
+            )
+            self.pages_bq.set_current_table("pages")
+            await self.pages_bq.run_queries(
+                PAGE_UPDATE_IMAGE_GCS_URI,
+                records=[
+                    {
+                        "doc_id": doc_id,
+                        "page_number": page_number,
+                        "image_gcs_uri": image_gcs_uri,
+                    }
+                ],
+            )
+            return image_gcs_uri
+        except Exception:
+            logger.exception(
+                "Failed to ensure page image doc_id=%s page=%s",
+                doc_id,
+                page_number,
+            )
+            return None
+
+    def _page_image_url(
+        self,
+        image_gcs_uri: str,
+        include_url: bool,
+    ) -> Optional[str]:
+        if not include_url or not image_gcs_uri:
+            return None
+        return self.storage.signed_url(image_gcs_uri)
 
     async def insert_doc(self, req: InsertDocReq) -> StatusResponse:
         if len(req.pages) != req.pages_number:
@@ -342,20 +402,23 @@ class STTService:
             page_rows = await self.pages_bq.run_queries(
                 PAGES_SELECT_BY_DOC, records=[{"doc_id": doc_id}]
             )
-            pages = [
-                PageSummary(
-                    id=row["id"],
-                    page_number=row["page_number"],
-                    content=row["content"] or "",
-                    audio_url=(
-                        self.storage.signed_url(row["audio_gcs_uri"])
-                        if include_url and row.get("audio_gcs_uri")
-                        else None
-                    ),
-                    has_text=page_has_text(row.get("content")),
+            pages = []
+            for row in page_rows[0]:
+                image_gcs_uri = (row.get("image_gcs_uri") or "").strip()
+                pages.append(
+                    PageSummary(
+                        id=row["id"],
+                        page_number=row["page_number"],
+                        content=row["content"] or "",
+                        audio_url=(
+                            self.storage.signed_url(row["audio_gcs_uri"])
+                            if include_url and row.get("audio_gcs_uri")
+                            else None
+                        ),
+                        image_url=self._page_image_url(image_gcs_uri, include_url),
+                        has_text=page_has_text(row.get("content")),
+                    )
                 )
-                for row in page_rows[0]
-            ]
             content_url = self.storage.signed_url(doc["gcs_uri"]) if include_url else None
             extra["found"] = True
             extra["pages"] = len(pages)
@@ -370,9 +433,20 @@ class STTService:
             )
 
     async def get_page(
-        self, doc_id: str, page_number: int, include_url: bool = True
+        self,
+        doc_id: str,
+        page_number: int,
+        include_url: bool = True,
+        ensure_image: bool | None = None,
     ) -> Optional[PageDetailResponse]:
-        extra = {"doc_id": doc_id, "page": page_number, "include_url": include_url}
+        if ensure_image is None:
+            ensure_image = include_url
+        extra = {
+            "doc_id": doc_id,
+            "page": page_number,
+            "include_url": include_url,
+            "ensure_image": ensure_image,
+        }
         with Timer("Get page", logger=logger, extra=extra):
             self.pages_bq.set_current_table("pages")
             rows = await self.pages_bq.run_queries(
@@ -384,11 +458,17 @@ class STTService:
             row = rows[0][0]
             content = row.get("content") or ""
             audio_gcs_uri = row.get("audio_gcs_uri") or ""
+            image_gcs_uri = (row.get("image_gcs_uri") or "").strip()
+            if ensure_image:
+                image_gcs_uri = (
+                    await self._ensure_page_image(doc_id, page_number, row) or image_gcs_uri
+                )
             audio_url = (
                 self.storage.signed_url(audio_gcs_uri)
                 if include_url and audio_gcs_uri
                 else None
             )
+            image_url = self._page_image_url(image_gcs_uri, include_url or ensure_image)
             extra["found"] = True
             extra["has_text"] = page_has_text(content)
             return PageDetailResponse(
@@ -399,6 +479,7 @@ class STTService:
                 content_aligned=row.get("content_aligned"),
                 audio_gcs_uri=audio_gcs_uri,
                 audio_url=audio_url,
+                image_url=image_url,
                 has_text=page_has_text(content),
             )
 

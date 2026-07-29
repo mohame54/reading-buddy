@@ -114,7 +114,7 @@ WHERE id = @id;
 """
 
 PAGES_SELECT_BY_DOC = """
-SELECT id, doc_id, page_number, content, audio_gcs_uri, content_aligned
+SELECT id, doc_id, page_number, content, audio_gcs_uri, content_aligned, image_gcs_uri
 FROM {dataset_table_id}
 WHERE doc_id = @doc_id
 ORDER BY page_number;
@@ -128,10 +128,16 @@ LIMIT 1;
 """
 
 PAGE_SELECT = """
-SELECT id, doc_id, page_number, content, audio_gcs_uri, content_aligned
+SELECT id, doc_id, page_number, content, audio_gcs_uri, content_aligned, image_gcs_uri
 FROM {dataset_table_id}
 WHERE doc_id = @doc_id AND page_number = @page_number
 LIMIT 1;
+"""
+
+PAGE_UPDATE_IMAGE_GCS_URI = """
+UPDATE {dataset_table_id}
+SET image_gcs_uri = @image_gcs_uri
+WHERE doc_id = @doc_id AND page_number = @page_number;
 """
 
 DOC_DELETE_BY_ID = """

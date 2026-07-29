@@ -55,6 +55,7 @@ flowchart TB
 |-------------|--------|
 | `docs/{doc_id}.{ext}` | `InsertDocReq.content` (base64 decoded) |
 | `previews/{doc_id}.png` | First-page PNG rendered on upload |
+| `page_images/{doc_id}/{page_number}.png` | Per-page PNG rendered on first reader/catalog request (hybrid cache) |
 | `audios/{doc_id}/{page_number}.wav` | `InsertPageReq.audio` (base64 decoded) |
 
 ### BigQuery
@@ -62,7 +63,7 @@ flowchart TB
 | Table | Key fields |
 |-------|------------|
 | `docs` | `id`, `title`, `ext`, `pages_number`, `gcs_uri`, `preview_gcs_uri` |
-| `pages` | `id`, `doc_id`, `page_number`, `content`, `audio_gcs_uri`, `content_aligned` |
+| `pages` | `id`, `doc_id`, `page_number`, `content`, `audio_gcs_uri`, `content_aligned`, `image_gcs_uri` |
 
 Schema definitions: [`src/schemas.json`](../src/schemas.json).
 
