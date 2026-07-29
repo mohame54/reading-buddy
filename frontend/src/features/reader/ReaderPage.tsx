@@ -98,12 +98,27 @@ function ReaderSession({
     }
   }, [ensurePageAudio]);
 
-  const handlePlayMismatchClip = useCallback(async () => {
+  const handlePlayMismatchWord = useCallback(async () => {
     if (!mismatch) return;
     const audio = await ensurePageAudio();
     if (!audio) return;
-    await playMismatchClip(audio, mismatch);
+    if (mismatch.start != null && mismatch.end != null) {
+      await playMismatchClip(audio, mismatch);
+    }
   }, [ensurePageAudio, mismatch]);
+
+  const handlePlayMismatchFullPage = useCallback(async () => {
+    const audio = await ensurePageAudio();
+    if (!audio) return;
+    const played = await playFullPage(audio);
+    if (played) {
+      setPageAudioPlaying(true);
+      audio.onended = () => setPageAudioPlaying(false);
+    }
+  }, [ensurePageAudio]);
+
+  const canPlayWordClip =
+    mismatch?.start != null && mismatch?.end != null;
 
   useEffect(() => {
     setPageAudioPlaying(false);
@@ -212,13 +227,27 @@ function ReaderSession({
           </p>
           <p className="hint">Listen to the correct pronunciation and try again.</p>
           {hasPageAudio && (
-            <button
-              type="button"
-              className="btn feedback-listen-btn"
-              onClick={handlePlayMismatchClip}
-            >
-              Hear correct word
-            </button>
+            <div className="feedback-actions">
+              {canPlayWordClip && (
+                <button
+                  type="button"
+                  className="btn feedback-listen-btn"
+                  onClick={handlePlayMismatchWord}
+                >
+                  Hear word
+                </button>
+              )}
+              <button
+                type="button"
+                className={`btn ${canPlayWordClip ? "btn-ghost" : ""} feedback-listen-btn`}
+                onClick={handlePlayMismatchFullPage}
+              >
+                Hear full page
+              </button>
+            </div>
+          )}
+          {hasPageAudio && !canPlayWordClip && (
+            <p className="hint">Word clip unavailable — use full page audio.</p>
           )}
         </div>
       )}

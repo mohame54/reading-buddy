@@ -350,6 +350,13 @@ a:hover {
 }
 
 .feedback-listen-btn {
+  margin-top: 0;
+}
+
+.feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-top: 0.75rem;
 }
 
