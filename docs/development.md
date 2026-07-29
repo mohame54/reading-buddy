@@ -35,7 +35,7 @@ export PROJECT_ID="your-gcp-project.your_dataset"
 export GOOGLE_CREDENTIALS="<base64 service account JSON>"
 export GCS_BUCKET="your-bucket-name"
 export MODEL_DIR="models"
-export CORS_ORIGINS="http://localhost:3000"  # optional
+export CORS_ORIGINS="http://localhost:5173"  # Vite dev server (see frontend/)
 
 uv sync
 uv run uvicorn main:app --reload --port 8080
@@ -63,3 +63,15 @@ The entrypoint downloads the model at container start when `FOLDER_DRIVE_ID` is 
 - Signed URLs (`content_url`, `audio_url`) require a service account **with a private key**.
 - BigQuery tables `docs` and `pages` are created automatically on first startup if missing.
 - Interactive OpenAPI docs are always available at `/docs` when the server is running.
+
+## Frontend
+
+The React SPA is in [`frontend/`](../frontend/). Deploy it separately to Cloud Run (`reading-buddy-web`).
+
+For production, set `CORS_ORIGINS` on the API to the frontend origin instead of `*`:
+
+```bash
+export CORS_ORIGINS="https://reading-buddy-web-xxxxx.run.app"
+```
+
+Update `VITE_API_BASE` and `VITE_WS_BASE` in `frontend/cloudbuild.yaml` before deploying the frontend.

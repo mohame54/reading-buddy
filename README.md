@@ -1,99 +1,52 @@
-# Reading Buddy API
+# Reading Buddy Frontend
 
-Backend for Reading Buddy: admins upload documents and page audio; children read page-by-page with speech-to-text feedback; the API replays correct pronunciation on mistakes and returns a final score when the book is finished.
+Vite + React + TypeScript SPA for the Reading Buddy admin panel and user reading app. Deploys to Cloud Run as `reading-buddy-web`.
 
 ## Quick links
 
-| Audience | Start here |
-|----------|------------|
-| **Frontend (build everything)** | [Frontend architecture guide](docs/frontend/ARCHITECTURE.md) |
-| **Frontend (quick index)** | [Frontend integration](docs/frontend/README.md) |
-| **API reference** | [API overview](src/api/README.md) |
-| **Architecture & storage** | [Architecture](docs/architecture.md) |
-| **Local setup & deployment** | [Development](docs/development.md) |
+| Topic | Doc |
+|-------|-----|
+| **App code** | [`frontend/`](frontend/) |
+| **Frontend architecture** | [docs/frontend/ARCHITECTURE.md](docs/frontend/ARCHITECTURE.md) |
+| **API integration** | [docs/frontend/README.md](docs/frontend/README.md) |
 
-## Live API docs
+## Routes
 
-When the server is running:
+| Mode | URL path |
+|------|----------|
+| Landing | `/` |
+| Admin | `/admin`, `/admin/upload`, `/admin/docs/:docId` |
+| Users | `/users`, `/users/read/:docId`, `/users/score` |
 
-- **Swagger UI:** `http://localhost:8080/docs`
-- **Health:** `GET /health` → `{ "status": "ok" }`
+## Local development
 
-## Base URL
+```bash
+# Terminal 1 — backend API (separate repo/host)
+export CORS_ORIGINS="http://localhost:5173"
+uvicorn main:app --reload --port 8080
 
-| Environment | URL |
-|-------------|-----|
-| Local | `http://localhost:8080` |
-| Production | Your deployed host (e.g. Cloud Run) |
-
-WebSocket: `ws://localhost:8080/reading/session` (use `wss://` in production).
-
-## Big picture
-
-```mermaid
-flowchart TB
-  subgraph adminFrontend [Admin frontend]
-    uploadNode["Upload doc and page audio"]
-    manageNode["List, view, delete docs"]
-  end
-
-  subgraph childFrontend [Parent / child frontend]
-    browseNode["Browse documents"]
-    readNode["Read page by page"]
-    listenNode["Replay mistake audio"]
-    scoreNode["Show final score"]
-  end
-
-  apiNode["Reading Buddy API"]
-  gcsNode[("GCS bucket")]
-  bqNode[("BigQuery")]
-
-  uploadNode -->|"POST /admin/docs"| apiNode
-  manageNode -->|"GET / DELETE /admin"| apiNode
-  browseNode -->|"GET /docs"| apiNode
-  readNode -->|"WS or POST /reading/check"| apiNode
-  apiNode -->|"start/end timestamps"| listenNode
-  apiNode -->|"final score"| scoreNode
-  apiNode --> gcsNode
-  apiNode --> bqNode
+# Terminal 2 — frontend
+cd frontend
+cp .env.example .env
+npm install
+npm run dev
 ```
 
-Details: [Architecture](docs/architecture.md)
+Open http://localhost:5173 — use `/admin` or `/users`.
 
-## Documentation map
+## Cloud Run deployment
 
-```
-docs/
-  architecture.md      # Backend system design
-  development.md       # Env vars, run locally, Docker
-  frontend/
-    ARCHITECTURE.md    # ★ Frontend build guide (start here)
-    README.md          # Quick route index
-    flows.md             # Step-by-step UI flows (admin, WebSocket, POST)
-    audio.md             # Audio encoding expectations
-    errors.md            # HTTP + WebSocket errors
+Deploy from the repo root:
 
-src/api/
-  README.md            # Endpoint index
-  admin.md             # POST/GET/DELETE /admin/*
-  catalog.md           # GET /docs/*
-  reading.md           # POST /reading/check, /reading/finish
-  websocket.md         # WS /reading/session protocol
-
-src/data/
-  README.md            # Pydantic models & request/response shapes
+```bash
+gcloud builds submit --config cloudbuild.yaml .
 ```
 
-## Endpoint cheat sheet
+Before deploying, set in [`cloudbuild.yaml`](cloudbuild.yaml):
 
-| App | Method | Path |
-|-----|--------|------|
-| Admin | `POST` | `/admin/docs` |
-| Admin | `GET` | `/admin/docs`, `/admin/docs/{id}`, `/admin/docs/{id}/pages/{n}` |
-| Admin | `DELETE` | `/admin/docs/{id}` |
-| Child | `GET` | `/docs`, `/docs/{id}`, `/docs/{id}/pages/{n}` |
-| Child | `POST` | `/reading/check`, `/reading/finish` |
-| Child | `WebSocket` | `/reading/session` |
-| Ops | `GET` | `/health` |
+- `_VITE_API_BASE` — backend HTTPS URL
+- `_VITE_WS_BASE` — backend WSS URL
 
-See [src/api/README.md](src/api/README.md) for payloads and responses.
+Also set backend `CORS_ORIGINS` to your frontend Cloud Run origin (e.g. `https://reading-buddy-web-xxxxx.run.app`).
+
+The root [`DockerFile`](DockerFile) builds `frontend/` into a static nginx image on port 8080.

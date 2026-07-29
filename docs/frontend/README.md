@@ -1,6 +1,8 @@
 # Frontend integration
 
-**Start here:** [ARCHITECTURE.md](ARCHITECTURE.md) — complete guide to build the admin panel and child reading app (screens, API contracts, WebSocket, grading, audio replay).
+**Implemented app:** [`frontend/`](../../frontend/) — Vite + React + TypeScript SPA with `/admin` and `/users` routes.
+
+**Build guide:** [ARCHITECTURE.md](ARCHITECTURE.md) — complete guide to the admin panel and child reading app (screens, API contracts, WebSocket, grading, audio replay).
 
 Supplementary docs: [flows](flows.md) · [audio](audio.md) · [errors](errors.md)
 
@@ -14,7 +16,7 @@ Supplementary docs: [flows](flows.md) · [audio](audio.md) · [errors](errors.md
 CORS is enabled (`CORS_ORIGINS` env, default `*`). Set your frontend origin in development:
 
 ```bash
-export CORS_ORIGINS="http://localhost:3000"
+export CORS_ORIGINS="http://localhost:5173"
 ```
 
 ## Which routes for which app?
