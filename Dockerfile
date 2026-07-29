@@ -33,6 +33,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     libsndfile1 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the virtual environment from builder
