@@ -27,6 +27,12 @@ class StatusResponse(BaseModel):
     doc_id: str | None = Field(None, description="Created document id")
 
 
+class RealignDocResponse(BaseModel):
+    doc_id: str
+    pages_aligned: int
+    pages_skipped: int
+
+
 class DocSummary(BaseModel):
     id: str
     title: str

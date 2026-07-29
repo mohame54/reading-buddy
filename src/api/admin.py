@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.deps import get_stt_service
-from src.data.reqs import DocListResponse, InsertDocReq, StatusResponse
+from src.data.reqs import (
+    DocListResponse,
+    InsertDocReq,
+    PageDetailResponse,
+    RealignDocResponse,
+    StatusResponse,
+)
 from src.services.stt_service import STTService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -49,3 +55,27 @@ async def delete_doc(doc_id: str, stt: STTService = Depends(get_stt_service)):
     if result.status != "success":
         raise HTTPException(status_code=404, detail=result.message)
     return result
+
+
+@router.post("/docs/{doc_id}/realign", response_model=RealignDocResponse)
+async def realign_doc(doc_id: str, stt: STTService = Depends(get_stt_service)):
+    try:
+        return await stt.realign_doc(doc_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/docs/{doc_id}/pages/{page_number}/realign",
+    response_model=PageDetailResponse,
+)
+async def realign_page(
+    doc_id: str,
+    page_number: int,
+    stt: STTService = Depends(get_stt_service),
+):
+    try:
+        return await stt.realign_page(doc_id, page_number)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc

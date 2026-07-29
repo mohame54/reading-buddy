@@ -115,6 +115,28 @@ Same shape as [catalog page detail](catalog.md#get-page) (`PageDetailResponse`),
 
 Deletes BigQuery rows and GCS objects under `docs/` and `audios/{doc_id}/`.
 
+## Re-align document
+
+`POST /admin/docs/{doc_id}/realign`
+
+Re-runs STT on every page that has reading text and reference audio, and updates `content_aligned` in BigQuery. Use after changing `STT_FRAME_DURATION` or fixing alignment bugs on existing uploads.
+
+```json
+{
+  "doc_id": "550e8400-e29b-41d4-a716-446655440000",
+  "pages_aligned": 6,
+  "pages_skipped": 2
+}
+```
+
+Picture-only pages and pages without audio are skipped (`pages_skipped`).
+
+## Re-align single page
+
+`POST /admin/docs/{doc_id}/pages/{page_number}/realign`
+
+Re-aligns one page and returns updated `PageDetailResponse` (including `content_aligned`).
+
 ## Related
 
 - [Audio format](../../docs/frontend/audio.md)

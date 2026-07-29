@@ -16,6 +16,7 @@ from src.bq.queries import (
     DOCS_COUNT,
     DOCS_SELECT_ALL,
     PAGE_SELECT,
+    PAGE_UPDATE_CONTENT_ALIGNED,
     PAGE_UPDATE_IMAGE_GCS_URI,
     PAGES_DELETE_BY_DOC,
     PAGES_SELECT_BY_DOC,
@@ -31,6 +32,7 @@ from src.data.reqs import (
     InsertDocReq,
     PageDetailResponse,
     PageSummary,
+    RealignDocResponse,
     StatusResponse,
     WordMismatch,
 )
@@ -496,7 +498,105 @@ class STTService:
             await self.docs_bq.run_queries(DOC_DELETE_BY_ID, records=[{"id": doc_id}])
             self.storage.delete_doc_assets(doc_id, doc.ext)
             extra["found"] = True
-        return StatusResponse(status="success", message="Document deleted")
+            return StatusResponse(status="success", message="Document deleted")
+
+    async def _update_page_content_aligned(
+        self, doc_id: str, page_number: int, content_aligned: str | None
+    ) -> None:
+        self.pages_bq.set_current_table("pages")
+        await self.pages_bq.run_queries(
+            PAGE_UPDATE_CONTENT_ALIGNED,
+            records=[
+                {
+                    "doc_id": doc_id,
+                    "page_number": page_number,
+                    "content_aligned": content_aligned,
+                }
+            ],
+        )
+
+    async def realign_page(
+        self, doc_id: str, page_number: int
+    ) -> PageDetailResponse:
+        extra = {"doc_id": doc_id, "page": page_number}
+        with Timer("Realign page", logger=logger, extra=extra):
+            self.pages_bq.set_current_table("pages")
+            rows = await self.pages_bq.run_queries(
+                PAGE_SELECT, records=[{"doc_id": doc_id, "page_number": page_number}]
+            )
+            if not rows or not rows[0]:
+                raise ValueError("Page not found")
+
+            row = rows[0][0]
+            content = row.get("content") or ""
+            if not page_has_text(content):
+                raise ValueError("Page has no reading text to align")
+
+            audio_gcs_uri = (row.get("audio_gcs_uri") or "").strip()
+            if not audio_gcs_uri:
+                raise ValueError("Page has no reference audio")
+
+            audio_bytes = self.storage.download_bytes(audio_gcs_uri)
+            aligned_list = self._align_page_audios([audio_bytes])
+            content_aligned = aligned_list[0]
+            await self._update_page_content_aligned(
+                doc_id, page_number, content_aligned
+            )
+            extra["aligned"] = content_aligned is not None
+
+        page = await self.get_page(doc_id, page_number, include_url=True)
+        if not page:
+            raise ValueError("Page not found after realign")
+        return page
+
+    async def realign_doc(self, doc_id: str) -> RealignDocResponse:
+        extra = {"doc_id": doc_id}
+        with Timer("Realign document", logger=logger, extra=extra):
+            self.docs_bq.set_current_table("docs")
+            doc_rows = await self.docs_bq.run_queries(
+                DOC_SELECT_BY_ID, records=[{"id": doc_id}]
+            )
+            if not doc_rows or not doc_rows[0]:
+                raise ValueError("Document not found")
+
+            self.pages_bq.set_current_table("pages")
+            page_rows = await self.pages_bq.run_queries(
+                PAGES_SELECT_BY_DOC, records=[{"doc_id": doc_id}]
+            )
+            pages = page_rows[0] if page_rows and page_rows[0] else []
+
+            align_inputs: List[tuple[int, bytes]] = []
+            skipped = 0
+            for row in pages:
+                content = row.get("content") or ""
+                audio_gcs_uri = (row.get("audio_gcs_uri") or "").strip()
+                if not page_has_text(content) or not audio_gcs_uri:
+                    skipped += 1
+                    continue
+                align_inputs.append(
+                    (row["page_number"], self.storage.download_bytes(audio_gcs_uri))
+                )
+
+            if not align_inputs:
+                raise ValueError("No pages with text and audio to align")
+
+            page_numbers = [item[0] for item in align_inputs]
+            audio_bytes_list = [item[1] for item in align_inputs]
+            aligned_list = self._align_page_audios(audio_bytes_list)
+
+            for page_number, content_aligned in zip(page_numbers, aligned_list):
+                await self._update_page_content_aligned(
+                    doc_id, page_number, content_aligned
+                )
+
+            aligned_count = sum(1 for a in aligned_list if a is not None)
+            extra["pages_aligned"] = aligned_count
+            extra["pages_skipped"] = skipped
+            return RealignDocResponse(
+                doc_id=doc_id,
+                pages_aligned=aligned_count,
+                pages_skipped=skipped,
+            )
 
     async def check_reading(
         self,

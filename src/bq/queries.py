@@ -140,6 +140,12 @@ SET image_gcs_uri = @image_gcs_uri
 WHERE doc_id = @doc_id AND page_number = @page_number;
 """
 
+PAGE_UPDATE_CONTENT_ALIGNED = """
+UPDATE {dataset_table_id}
+SET content_aligned = @content_aligned
+WHERE doc_id = @doc_id AND page_number = @page_number;
+"""
+
 DOC_DELETE_BY_ID = """
 DELETE FROM {dataset_table_id}
 WHERE id = @id;
