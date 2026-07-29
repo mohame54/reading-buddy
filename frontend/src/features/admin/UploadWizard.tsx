@@ -41,7 +41,7 @@ export function UploadWizard() {
       return;
     }
     if (pages.some((p) => !p.text.trim() || !p.audioFile)) {
-      setError("Each page needs text and a reference WAV file.");
+      setError("Each page needs text and a reference audio file (WAV or MP3).");
       return;
     }
 
@@ -125,10 +125,10 @@ export function UploadWizard() {
                   />
                 </label>
                 <label>
-                  Reference audio (WAV)
+                  Reference audio (WAV or MP3)
                   <input
                     type="file"
-                    accept=".wav,audio/wav"
+                    accept=".wav,.mp3,audio/wav,audio/mpeg"
                     onChange={(e) => updatePage(i, "audioFile", e.target.files?.[0] ?? null)}
                     required
                   />
