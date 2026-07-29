@@ -23,6 +23,7 @@ export function useReadingSession({ docId, audioMap, onScore }: UseReadingSessio
   const [pageNumber, setPageNumber] = useState(1);
   const [pagesTotal, setPagesTotal] = useState(1);
   const [pageText, setPageText] = useState("");
+  const [pageImageUrl, setPageImageUrl] = useState<string | null>(null);
   const [hasText, setHasText] = useState(true);
   const [cursor, setCursor] = useState(0);
   const [canGoNext, setCanGoNext] = useState(false);
@@ -43,12 +44,14 @@ export function useReadingSession({ docId, audioMap, onScore }: UseReadingSessio
       onOpen: () => setConnected(true),
       onPage: (msg) => {
         setPageText(msg.content);
+        setPageImageUrl(msg.image_url ?? null);
         setPageNumber(msg.page_number);
         pageNumberRef.current = msg.page_number;
         setPagesTotal(msg.pages_total);
         const pageHasText =
           msg.has_text ?? Boolean(msg.content.split(/\s+/).filter(Boolean).length);
         setHasText(pageHasText);
+        setCursor(0);
         setCanGoNext(false);
         setMismatch(null);
         setPhase("idle");
@@ -119,6 +122,7 @@ export function useReadingSession({ docId, audioMap, onScore }: UseReadingSessio
     pageNumber,
     pagesTotal,
     pageText,
+    pageImageUrl,
     hasText,
     cursor,
     canGoNext,

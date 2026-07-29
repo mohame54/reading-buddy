@@ -31,6 +31,7 @@ function ReaderSession({
     pageNumber,
     pagesTotal,
     pageText,
+    pageImageUrl,
     hasText,
     cursor,
     canGoNext,
@@ -61,8 +62,17 @@ function ReaderSession({
   };
 
   const words = pageText.split(/\s+/).filter(Boolean);
+  const progressPercent =
+    words.length > 0 ? Math.min(100, (cursor / words.length) * 100) : 0;
+
+  const wordClass = (index: number) => {
+    if (mismatch?.index === index) return "word word-wrong";
+    if (index < cursor) return "word word-correct";
+    return "word word-pending";
+  };
+
   const highlightedWords = words.map((word, i) => (
-    <span key={i} className={i < cursor ? "word word-done" : "word"}>
+    <span key={i} className={wordClass(i)}>
       {word}{" "}
     </span>
   ));
@@ -82,6 +92,16 @@ function ReaderSession({
         </span>
       </div>
 
+      {pageImageUrl ? (
+        <img
+          src={pageImageUrl}
+          alt={`Page ${pageNumber}`}
+          className="reader-page-image"
+        />
+      ) : (
+        <p className="hint reader-image-fallback">Page image unavailable</p>
+      )}
+
       <div className="reader-text arabic-text" dir="auto">
         {hasText ? (
           highlightedWords
@@ -89,6 +109,20 @@ function ReaderSession({
           <p className="hint">No reading text on this page — continue when ready.</p>
         )}
       </div>
+
+      {hasText && words.length > 0 && (
+        <div className="reader-progress" aria-label="Reading progress">
+          <div className="reader-progress-track">
+            <div
+              className="reader-progress-fill"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <span className="reader-progress-label">
+            {Math.min(cursor, words.length)} / {words.length} words
+          </span>
+        </div>
+      )}
 
       {mismatch && (
         <div className="feedback-box">

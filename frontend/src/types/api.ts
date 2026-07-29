@@ -30,6 +30,7 @@ export interface PageSummary {
   page_number: number;
   content: string;
   audio_url: string | null;
+  image_url?: string | null;
   has_text?: boolean;
 }
 
@@ -41,6 +42,7 @@ export interface PageDetailResponse {
   content_aligned: string | null;
   audio_gcs_uri: string;
   audio_url: string | null;
+  image_url?: string | null;
   has_text?: boolean;
 }
 
@@ -107,6 +109,7 @@ export type ServerMessage =
       doc_id: string;
       page_number: number;
       content: string;
+      image_url?: string | null;
       pages_total: number;
       has_text?: boolean;
     }

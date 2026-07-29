@@ -325,18 +325,71 @@ a:hover {
   color: #b54708;
 }
 
+.reader-page-image {
+  display: block;
+  width: 100%;
+  max-height: min(70vh, 640px);
+  object-fit: contain;
+  margin-bottom: 1rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  background: var(--bg-elevated);
+}
+
+.reader-image-fallback {
+  margin: 0 0 1rem;
+  text-align: center;
+}
+
 .reader-text {
   padding: 1.5rem;
   background: var(--bg-elevated);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  margin-bottom: 1rem;
-  min-height: 120px;
+  margin-bottom: 0.75rem;
+  min-height: 80px;
 }
 
-.word-done {
-  color: var(--accent);
+.word-pending {
+  color: var(--text-muted);
+}
+
+.word-correct {
+  color: #1a7f4b;
   font-weight: 600;
+}
+
+.word-wrong {
+  color: #c62828;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(198, 40, 40, 0.4);
+}
+
+.reader-progress {
+  margin-bottom: 1rem;
+}
+
+.reader-progress-track {
+  height: 6px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.reader-progress-fill {
+  height: 100%;
+  background: #1a7f4b;
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+
+.reader-progress-label {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: right;
 }
 
 .feedback-box {
