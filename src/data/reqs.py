@@ -105,17 +105,27 @@ class CheckReadingResponse(BaseModel):
     page_complete: bool = False
 
 
+class SkipReadingReq(BaseModel):
+    doc_id: str
+    page_number: int
+    cursor: int = 0
+
+
 class FinishReadingReq(BaseModel):
     doc_id: str
     words_total: int
     words_correct: int
     pages_completed: int
+    words_skipped: int = 0
+    words_retried_correct: int = 0
 
 
 class FinalScoreResponse(BaseModel):
     doc_id: str
     words_total: int
     words_correct: int
+    words_skipped: int = 0
+    words_retried_correct: int = 0
     pages_completed: int
     pages_total: int
     accuracy: float

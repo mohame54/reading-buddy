@@ -102,11 +102,15 @@ BigQuery column definitions: [`schemas.json`](../schemas.json)
 
 ### `FinishReadingReq`
 
-`doc_id`, `words_total`, `words_correct`, `pages_completed`
+`doc_id`, `words_total`, `words_correct`, `pages_completed`, `words_skipped` (default `0`), `words_retried_correct` (default `0`)
+
+### `SkipReadingReq`
+
+`doc_id`, `page_number`, `cursor`
 
 ### `FinalScoreResponse`
 
-`doc_id`, `words_total`, `words_correct`, `pages_completed`, `pages_total`, `accuracy`
+`doc_id`, `words_total`, `words_correct`, `words_skipped`, `words_retried_correct`, `pages_completed`, `pages_total`, `accuracy`
 
 ## BigQuery records
 
@@ -157,6 +161,8 @@ interface FinalScoreResponse {
   doc_id: string;
   words_total: number;
   words_correct: number;
+  words_skipped: number;
+  words_retried_correct: number;
   pages_completed: number;
   pages_total: number;
   accuracy: number;

@@ -10,6 +10,7 @@ from src.data.reqs import (
     CheckReadingResponse,
     FinalScoreResponse,
     FinishReadingReq,
+    SkipReadingReq,
 )
 from src.services.reading_session import ReadingSession
 from src.services.stt_service import STTService
@@ -19,6 +20,30 @@ from src.utils.decorators import Timer
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reading", tags=["reading"])
+
+
+async def _send_cursor_outcome(
+    send,
+    session: ReadingSession,
+    cursor: int,
+    page_complete: bool,
+) -> str:
+    """Send ok, page_complete, or score after cursor advances."""
+    if page_complete:
+        if session.page_number >= session.pages_total:
+            score = session.to_score()
+            await send({"type": "score", **score.model_dump()})
+            return "score"
+        await send(
+            {
+                "type": "page_complete",
+                "page_number": session.page_number,
+                "cursor": cursor,
+            }
+        )
+        return "page_complete"
+    await send({"type": "ok", "cursor": cursor})
+    return "ok"
 
 
 async def _send_page_and_maybe_complete(
@@ -70,6 +95,16 @@ async def check_reading(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/skip", response_model=CheckReadingResponse)
+async def skip_reading(
+    req: SkipReadingReq, stt: STTService = Depends(get_stt_service)
+):
+    try:
+        return await stt.skip_word(req.doc_id, req.page_number, req.cursor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/finish", response_model=FinalScoreResponse)
 async def finish_reading(
     req: FinishReadingReq, stt: STTService = Depends(get_stt_service)
@@ -83,6 +118,8 @@ async def finish_reading(
         req.words_correct,
         req.pages_completed,
         doc.pages_number,
+        req.words_skipped,
+        req.words_retried_correct,
     )
 
 
@@ -164,10 +201,13 @@ async def reading_session(websocket: WebSocket):
                         message["data"],
                         session.cursor,
                     )
-                    session.apply_check(
-                        previous_cursor, result.cursor, result.page_complete
-                    )
                     if result.mismatches:
+                        session.apply_check(
+                            previous_cursor,
+                            result.cursor,
+                            page_complete=False,
+                        )
+                        session.mark_mismatch()
                         outcome = "feedback"
                         await send(
                             {
@@ -176,25 +216,41 @@ async def reading_session(websocket: WebSocket):
                                 "cursor": result.cursor,
                             }
                         )
-                    elif result.page_complete:
-                        if session.page_number >= session.pages_total:
-                            outcome = "score"
-                            score = session.to_score()
-                            await send({"type": "score", **score.model_dump()})
-                        else:
-                            outcome = "page_complete"
-                            await send(
-                                {
-                                    "type": "page_complete",
-                                    "page_number": session.page_number,
-                                    "cursor": result.cursor,
-                                }
-                            )
                     else:
-                        outcome = "ok"
-                        await send({"type": "ok", "cursor": result.cursor})
+                        session.apply_check(
+                            previous_cursor,
+                            result.cursor,
+                            result.page_complete,
+                        )
+                        outcome = await _send_cursor_outcome(
+                            send,
+                            session,
+                            result.cursor,
+                            result.page_complete,
+                        )
                     audio_extra["outcome"] = outcome
                     audio_extra["new_cursor"] = result.cursor
+                continue
+
+            if msg_type == "skip":
+                skip_extra = {
+                    "doc_id": session.doc_id,
+                    "page": session.page_number,
+                    "cursor": session.cursor,
+                }
+                with Timer("WebSocket skip word", logger=logger, extra=skip_extra):
+                    try:
+                        new_cursor, page_complete = session.skip_current_word()
+                    except ValueError:
+                        await send({"type": "error", "message": "Nothing to skip"})
+                        continue
+                    skip_extra["new_cursor"] = new_cursor
+                    skip_extra["outcome"] = await _send_cursor_outcome(
+                        send,
+                        session,
+                        new_cursor,
+                        page_complete,
+                    )
                 continue
 
             if msg_type == "next_page":

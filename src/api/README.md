@@ -38,6 +38,7 @@ All paths are relative to the API base URL (e.g. `http://localhost:8080`).
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/reading/check` | Check one utterance |
+| `POST` | `/reading/skip` | Skip current word after mismatch (POST flow) |
 | `POST` | `/reading/finish` | Submit final score (POST flow) |
 | `WebSocket` | `/reading/session` | Live reading session |
 

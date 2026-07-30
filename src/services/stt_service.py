@@ -668,6 +668,36 @@ class STTService:
                 page_complete=page_complete,
             )
 
+    async def skip_word(
+        self,
+        doc_id: str,
+        page_number: int,
+        cursor: int,
+    ) -> CheckReadingResponse:
+        page = await self.get_page(doc_id, page_number, include_url=False)
+        if not page:
+            raise ValueError("Page not found")
+
+        expected_words = tokenize_text(page.content)
+        if not expected_words:
+            return CheckReadingResponse(
+                ok=True,
+                cursor=0,
+                mismatches=[],
+                page_complete=True,
+            )
+        if cursor >= len(expected_words):
+            raise ValueError("Nothing to skip")
+
+        new_cursor = cursor + 1
+        page_complete = new_cursor >= len(expected_words)
+        return CheckReadingResponse(
+            ok=True,
+            cursor=new_cursor,
+            mismatches=[],
+            page_complete=page_complete,
+        )
+
     def build_final_score(
         self,
         doc_id: str,
@@ -675,12 +705,16 @@ class STTService:
         words_correct: int,
         pages_completed: int,
         pages_total: int,
+        words_skipped: int = 0,
+        words_retried_correct: int = 0,
     ) -> FinalScoreResponse:
         accuracy = (words_correct / words_total) if words_total else 0.0
         return FinalScoreResponse(
             doc_id=doc_id,
             words_total=words_total,
             words_correct=words_correct,
+            words_skipped=words_skipped,
+            words_retried_correct=words_retried_correct,
             pages_completed=pages_completed,
             pages_total=pages_total,
             accuracy=round(accuracy, 4),

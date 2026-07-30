@@ -13,6 +13,7 @@ All messages are **JSON text frames**.
 |--------|---------|------|
 | `start` | `{ "type": "start", "doc_id": "...", "page_number": 1 }` | Begin session |
 | `audio` | `{ "type": "audio", "data": "<base64 utterance>" }` | Child finished speaking |
+| `skip` | `{ "type": "skip" }` | After `feedback` — advance past the wrong word without credit |
 | `next_page` | `{ "type": "next_page" }` | After `page_complete` on non-last page |
 | `end` | `{ "type": "end" }` | End session and get score |
 
@@ -24,10 +25,22 @@ All messages are **JSON text frames**.
 |--------|------|
 | `page` | After `start` or `next_page` — includes `content`, `image_url`, `page_number`, `pages_total` |
 | `ok` | Utterance correct, more words remain — includes `cursor` |
-| `feedback` | Wrong word — includes `mismatches[]` and `cursor` |
+| `feedback` | Wrong word — includes `mismatches[]` and `cursor` (unchanged on the stuck word) |
 | `page_complete` | Page finished (not last page) |
 | `score` | Book finished or `end` / `next_page` on last page |
 | `error` | Invalid state or missing resource |
+
+### Scoring (WebSocket)
+
+`words_total` counts words **resolved** (moved past), not speech attempts.
+
+| Outcome | `words_total` | `words_correct` | Extra |
+|---------|---------------|-----------------|-------|
+| Correct first try | +1 | +1 | — |
+| Wrong, then correct on retry | +1 | +1 | `words_retried_correct` +1 |
+| Skip after feedback | +1 | +0 | `words_skipped` +1 |
+
+`accuracy = words_correct / words_total`. Retries that succeed get full credit; skipping is the accuracy penalty.
 
 ### `page`
 
@@ -63,6 +76,8 @@ All messages are **JSON text frames**.
 }
 ```
 
+After `feedback`, the client may send another `audio` (retry) or `{ "type": "skip" }` to continue without fixing the word.
+
 ### `score`
 
 ```json
@@ -71,6 +86,8 @@ All messages are **JSON text frames**.
   "doc_id": "550e8400-e29b-41d4-a716-446655440000",
   "words_total": 42,
   "words_correct": 38,
+  "words_skipped": 4,
+  "words_retried_correct": 6,
   "pages_completed": 2,
   "pages_total": 2,
   "accuracy": 0.9048
@@ -92,6 +109,13 @@ sequenceDiagram
     UI->>WS: audio
     alt mismatch
       WS-->>UI: feedback
+      alt retry
+        UI->>WS: audio
+        WS-->>UI: ok
+      else skip
+        UI->>WS: skip
+        WS-->>UI: ok
+      end
     else ok
       WS-->>UI: ok
     end
@@ -103,7 +127,7 @@ sequenceDiagram
   WS-->>UI: score
 ```
 
-On the **last page**, completing the page via `audio` emits `score` directly (no `page_complete`).
+On the **last page**, completing the page via `audio` or `skip` emits `score` directly (no `page_complete`).
 
 ## Minimal browser example
 
@@ -130,13 +154,14 @@ ws.onmessage = (event) => {
       if (m?.start != null && m?.end != null) {
         playWordClip(pageAudio, m.start, m.end); // or play full pageAudio
       }
+      // show Try again + Continue; Continue sends skip
       break;
     }
     case "page_complete":
       ws.send(JSON.stringify({ type: "next_page" }));
       break;
     case "score":
-      showScoreScreen(msg.accuracy, msg.words_correct, msg.words_total);
+      showScoreScreen(msg);
       break;
     case "error":
       console.error(msg.message);
@@ -146,6 +171,10 @@ ws.onmessage = (event) => {
 
 function sendUtterance(base64Wav) {
   ws.send(JSON.stringify({ type: "audio", data: base64Wav }));
+}
+
+function skipWord() {
+  ws.send(JSON.stringify({ type: "skip" }));
 }
 
 function playWordClip(audioEl, start, end) {
