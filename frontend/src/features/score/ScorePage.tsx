@@ -51,6 +51,14 @@ export function ScorePage() {
                 {score.pages_completed} / {score.pages_total}
               </dd>
             </div>
+            <div>
+              <dt>{t("score.wordsRetriedCorrect")}</dt>
+              <dd>{score.words_retried_correct ?? 0}</dd>
+            </div>
+            <div>
+              <dt>{t("score.wordsSkipped")}</dt>
+              <dd>{score.words_skipped ?? 0}</dd>
+            </div>
           </dl>
         </div>
 

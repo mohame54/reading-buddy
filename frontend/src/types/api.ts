@@ -97,6 +97,8 @@ export interface FinalScoreResponse {
   doc_id: string;
   words_total: number;
   words_correct: number;
+  words_skipped?: number;
+  words_retried_correct?: number;
   pages_completed: number;
   pages_total: number;
   accuracy: number;
@@ -106,6 +108,7 @@ export interface FinalScoreResponse {
 export type ClientMessage =
   | { type: "start"; doc_id: string; page_number?: number }
   | { type: "audio"; data: string }
+  | { type: "skip" }
   | { type: "next_page" }
   | { type: "end" };
 

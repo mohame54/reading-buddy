@@ -111,6 +111,12 @@ export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) 
     sessionRef.current?.end();
   }, []);
 
+  const skipWord = useCallback(() => {
+    setPhase("processing");
+    setError(null);
+    sessionRef.current?.skip();
+  }, []);
+
   return {
     phase,
     pageNumber,
@@ -126,6 +132,7 @@ export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) 
     sendAudio,
     goNextPage,
     endSession,
+    skipWord,
     setPhase,
   };
 }

@@ -51,6 +51,7 @@ function ReaderSession({
     sendAudio,
     goNextPage,
     endSession,
+    skipWord,
     setPhase,
   } = useReadingSession({
     docId,
@@ -256,6 +257,16 @@ function ReaderSession({
           {hasPageAudio && !canPlayWordClip && (
             <p className="hint">{t("reader.wordClipUnavailable")}</p>
           )}
+          <div className="feedback-actions">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={skipWord}
+              disabled={phase === "processing" || !connected || recording}
+            >
+              {t("reader.continue")}
+            </button>
+          </div>
         </div>
       )}
 

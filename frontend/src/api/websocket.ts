@@ -79,6 +79,10 @@ export class ReadingSession {
     this.send({ type: "audio", data: base64Wav });
   }
 
+  skip(): void {
+    this.send({ type: "skip" });
+  }
+
   nextPage(): void {
     this.send({ type: "next_page" });
   }

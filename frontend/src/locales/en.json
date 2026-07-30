@@ -49,13 +49,14 @@
     "wordsProgress": "{{current}} / {{total}} words",
     "expected": "Expected:",
     "heard": "Heard:",
-    "mismatchHint": "Listen to the correct pronunciation and try again.",
+    "mismatchHint": "Listen, try again, or continue.",
     "hearWord": "Hear word",
     "hearFullPage": "Hear full page",
     "wordClipUnavailable": "Word clip unavailable — use full page audio.",
     "record": "Record",
     "stop": "Stop",
     "tryAgain": "Try again",
+    "continue": "Continue",
     "nextPage": "Next page",
     "finishEarly": "Finish early",
     "status": "Status: {{phase}}",
@@ -78,7 +79,9 @@
     "goToLibrary": "Go to library",
     "accuracy": "Accuracy",
     "wordsCorrect": "Words correct",
-    "pagesCompleted": "Pages completed"
+    "pagesCompleted": "Pages completed",
+    "wordsSkipped": "Words skipped",
+    "wordsRetriedCorrect": "Corrected after retry"
   },
   "admin": {
     "dashboard": "Admin Dashboard",

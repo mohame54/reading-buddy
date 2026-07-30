@@ -49,13 +49,14 @@
     "wordsProgress": "{{current}} / {{total}} كلمات",
     "expected": "المطلوب:",
     "heard": "المسموع:",
-    "mismatchHint": "استمع للنطق الصحيح وحاول مرة أخرى.",
+    "mismatchHint": "استمع وحاول أو تابع.",
     "hearWord": "اسمع الكلمة",
     "hearFullPage": "اسمع الصفحة كاملة",
     "wordClipUnavailable": "مقطع الكلمة غير متاح — استخدم صوت الصفحة كاملة.",
     "record": "سجّل",
     "stop": "إيقاف",
     "tryAgain": "حاول مرة أخرى",
+    "continue": "متابعة",
     "nextPage": "الصفحة التالية",
     "finishEarly": "إنهاء مبكر",
     "status": "الحالة: {{phase}}",
@@ -78,7 +79,9 @@
     "goToLibrary": "الذهاب للمكتبة",
     "accuracy": "الدقة",
     "wordsCorrect": "كلمات صحيحة",
-    "pagesCompleted": "صفحات مكتملة"
+    "pagesCompleted": "صفحات مكتملة",
+    "wordsSkipped": "كلمات تم تخطيها",
+    "wordsRetriedCorrect": "صححت بعد إعادة المحاولة"
   },
   "admin": {
     "dashboard": "لوحة تحكم الإدارة",
