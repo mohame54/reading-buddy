@@ -657,7 +657,9 @@ class STTService:
                         )
                     )
 
-            page_complete = new_cursor >= len(expected_words)
+            page_complete = (
+                len(mismatches) == 0 and new_cursor >= len(expected_words)
+            )
             check_extra["new_cursor"] = new_cursor
             check_extra["mismatches"] = len(mismatches)
             check_extra["page_complete"] = page_complete

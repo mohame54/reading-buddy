@@ -25,7 +25,7 @@ All messages are **JSON text frames**.
 |--------|------|
 | `page` | After `start` or `next_page` — includes `content`, `image_url`, `page_number`, `pages_total` |
 | `ok` | Utterance correct, more words remain — includes `cursor` |
-| `feedback` | Wrong word — includes `mismatches[]` and `cursor` (unchanged on the stuck word) |
+| `feedback` | One or more wrong words — includes `mismatches[]` and `cursor` at the first unresolved word |
 | `page_complete` | Page finished (not last page) |
 | `score` | Book finished or `end` / `next_page` on last page |
 | `error` | Invalid state or missing resource |

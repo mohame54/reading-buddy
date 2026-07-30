@@ -11,8 +11,8 @@ HTTP fallback for reading checks and final score. For live sessions prefer [WebS
 2. Server transcribes with Arabic ONNX STT.
 3. Words are compared to page `content` starting at **`cursor`**.
 4. On mismatch → returns `start` / `end` (seconds in the page reference audio).
-5. Cursor advances only over correctly read words; stops at first mistake.
-6. Client may **retry** (`POST /reading/check` with same cursor) or **skip** (`POST /reading/skip`) to advance without credit.
+5. Cursor advances only over consecutive correct words before the first mistake; all mismatches in the utterance are returned.
+6. Client may **retry** (`POST /reading/check` with same cursor) or **skip** (`POST /reading/skip`) to advance past each unresolved word.
 7. When all words on the page are resolved → `page_complete: true`.
 
 Grading uses **`content`** (admin text). Timestamps in `content_aligned` are resolved server-side into `start` / `end` on mismatches.

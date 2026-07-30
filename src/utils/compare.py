@@ -76,24 +76,27 @@ def compare_utterance(
 ) -> Tuple[int, List[Tuple[int, str, Optional[str]]]]:
     """
     Compare heard words against expected words starting at cursor.
-    Returns updated cursor and list of (index, expected, heard) mismatches.
-    Stops at first mismatch.
-    """
+
+    Aligns heard[i] with expected[cursor + i]. Collects every mismatch in the
+    utterance. The returned cursor advances only through consecutive correct
+    words before the first mismatch (gate stays on the first unresolved word).
+  """
     mismatches: List[Tuple[int, str, Optional[str]]] = []
-    heard_idx = 0
-    pos = cursor
+    leading_correct = 0
 
-    while heard_idx < len(heard_words) and pos < len(expected_words):
+    for i, heard in enumerate(heard_words):
+        pos = cursor + i
+        if pos >= len(expected_words):
+            break
         expected = expected_words[pos]
-        heard = heard_words[heard_idx]
         if normalize_word(expected) == normalize_word(heard):
-            pos += 1
-            heard_idx += 1
-            continue
-        mismatches.append((pos, expected, heard))
-        break
+            if not mismatches:
+                leading_correct += 1
+        else:
+            mismatches.append((pos, expected, heard))
 
-    return pos, mismatches
+    new_cursor = cursor + leading_correct
+    return new_cursor, mismatches
 
 
 def decode_audio_base64(audio_b64: str) -> Tuple[np.ndarray, int]:
