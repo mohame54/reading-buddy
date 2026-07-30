@@ -25,9 +25,15 @@ export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) 
   const [hasText, setHasText] = useState(true);
   const [cursor, setCursor] = useState(0);
   const [canGoNext, setCanGoNext] = useState(false);
-  const [mismatch, setMismatch] = useState<WordMismatch | null>(null);
+  const [mismatches, setMismatches] = useState<WordMismatch[]>([]);
+  const mismatchesRef = useRef<WordMismatch[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+
+  const updateMismatches = useCallback((next: WordMismatch[]) => {
+    mismatchesRef.current = next;
+    setMismatches(next);
+  }, []);
 
   useEffect(() => {
     onScoreRef.current = onScore;
@@ -47,22 +53,25 @@ export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) 
         setHasText(pageHasText);
         setCursor(0);
         setCanGoNext(false);
-        setMismatch(null);
+        updateMismatches([]);
         setPhase("idle");
       },
       onOk: (msg) => {
+        const remaining = mismatchesRef.current.filter((m) => m.index >= msg.cursor);
+        updateMismatches(remaining);
         setCursor(msg.cursor);
-        setMismatch(null);
-        setPhase("idle");
+        setPhase(
+          remaining.some((m) => m.index === msg.cursor) ? "retry" : "idle",
+        );
       },
       onFeedback: (msg) => {
-        const m = msg.mismatches[0] ?? null;
-        setMismatch(m);
+        updateMismatches(msg.mismatches);
         setCursor(msg.cursor);
         setPhase("retry");
       },
       onPageComplete: (msg) => {
         setCursor(msg.cursor);
+        updateMismatches([]);
         setCanGoNext(true);
         setPhase("page_done");
       },
@@ -92,7 +101,7 @@ export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) 
     return () => {
       session.close();
     };
-  }, [docId]);
+  }, [docId, updateMismatches]);
 
   const sendAudio = useCallback((base64: string) => {
     setPhase("processing");
@@ -102,10 +111,10 @@ export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) 
 
   const goNextPage = useCallback(() => {
     setCanGoNext(false);
-    setMismatch(null);
+    updateMismatches([]);
     setPhase("idle");
     sessionRef.current?.nextPage();
-  }, []);
+  }, [updateMismatches]);
 
   const endSession = useCallback(() => {
     sessionRef.current?.end();
@@ -117,6 +126,9 @@ export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) 
     sessionRef.current?.skip();
   }, []);
 
+  const activeMismatch =
+    mismatches.find((m) => m.index === cursor) ?? mismatches[0] ?? null;
+
   return {
     phase,
     pageNumber,
@@ -126,7 +138,8 @@ export function useReadingSession({ docId, onScore }: UseReadingSessionOptions) 
     hasText,
     cursor,
     canGoNext,
-    mismatch,
+    mismatches,
+    activeMismatch,
     error,
     connected,
     sendAudio,

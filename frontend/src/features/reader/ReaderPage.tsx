@@ -45,7 +45,8 @@ function ReaderSession({
     hasText,
     cursor,
     canGoNext,
-    mismatch,
+    mismatches,
+    activeMismatch,
     error: sessionError,
     connected,
     sendAudio,
@@ -102,13 +103,13 @@ function ReaderSession({
   }, [ensurePageAudio]);
 
   const handlePlayMismatchWord = useCallback(async () => {
-    if (!mismatch) return;
+    if (!activeMismatch) return;
     const audio = await ensurePageAudio();
     if (!audio) return;
-    if (mismatch.start != null && mismatch.end != null) {
-      await playMismatchClip(audio, mismatch);
+    if (activeMismatch.start != null && activeMismatch.end != null) {
+      await playMismatchClip(audio, activeMismatch);
     }
-  }, [ensurePageAudio, mismatch]);
+  }, [ensurePageAudio, activeMismatch]);
 
   const handlePlayMismatchFullPage = useCallback(async () => {
     const audio = await ensurePageAudio();
@@ -119,9 +120,6 @@ function ReaderSession({
       audio.onended = () => setPageAudioPlaying(false);
     }
   }, [ensurePageAudio]);
-
-  const canPlayWordClip =
-    mismatch?.start != null && mismatch?.end != null;
 
   useEffect(() => {
     setPageAudioPlaying(false);
@@ -144,9 +142,16 @@ function ReaderSession({
   const words = pageText.split(/\s+/).filter(Boolean);
   const progressPercent =
     words.length > 0 ? Math.min(100, (cursor / words.length) * 100) : 0;
+  const mismatchIndexes = new Set(mismatches.map((m) => m.index));
+  const gatedMismatch =
+    activeMismatch && activeMismatch.index === cursor ? activeMismatch : null;
+  const canPlayWordClip =
+    gatedMismatch?.start != null && gatedMismatch?.end != null;
 
   const wordClass = (index: number) => {
-    if (mismatch?.index === index) return "word word-wrong";
+    if (mismatchIndexes.has(index)) {
+      return index === cursor ? "word word-wrong word-wrong-active" : "word word-wrong";
+    }
     if (index < cursor) return "word word-correct";
     return "word word-pending";
   };
@@ -222,19 +227,38 @@ function ReaderSession({
         </div>
       )}
 
-      {mismatch && (
+      {mismatches.length > 0 && (
         <div className="feedback-box">
-          <p>
-            {t("reader.expected")} <strong>{mismatch.expected}</strong>
-            {mismatch.heard && (
-              <>
-                {" "}
-                · {t("reader.heard")} <em>{mismatch.heard}</em>
-              </>
-            )}
-          </p>
+          {gatedMismatch ? (
+            <p>
+              {t("reader.expected")} <strong>{gatedMismatch.expected}</strong>
+              {gatedMismatch.heard && (
+                <>
+                  {" "}
+                  · {t("reader.heard")} <em>{gatedMismatch.heard}</em>
+                </>
+              )}
+            </p>
+          ) : (
+            <p className="hint">{t("reader.moreMismatchesAhead")}</p>
+          )}
+          {mismatches.length > 1 && (
+            <ul className="mismatch-list">
+              {mismatches.map((m) => (
+                <li key={m.index} className={m.index === cursor ? "mismatch-current" : undefined}>
+                  <strong>{m.expected}</strong>
+                  {m.heard && (
+                    <>
+                      {" "}
+                      · <em>{m.heard}</em>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="hint">{t("reader.mismatchHint")}</p>
-          {hasPageAudio && (
+          {gatedMismatch && hasPageAudio && (
             <div className="feedback-actions">
               {canPlayWordClip && (
                 <button
@@ -254,19 +278,21 @@ function ReaderSession({
               </button>
             </div>
           )}
-          {hasPageAudio && !canPlayWordClip && (
+          {gatedMismatch && hasPageAudio && !canPlayWordClip && (
             <p className="hint">{t("reader.wordClipUnavailable")}</p>
           )}
-          <div className="feedback-actions">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={skipWord}
-              disabled={phase === "processing" || !connected || recording}
-            >
-              {t("reader.continue")}
-            </button>
-          </div>
+          {gatedMismatch && (
+            <div className="feedback-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={skipWord}
+                disabled={phase === "processing" || !connected || recording}
+              >
+                {t("reader.continue")}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

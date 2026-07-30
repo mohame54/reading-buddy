@@ -425,6 +425,28 @@ a:hover {
   text-decoration-color: rgba(198, 40, 40, 0.4);
 }
 
+.word-wrong-active {
+  background: rgba(198, 40, 40, 0.12);
+  border-radius: 4px;
+  padding: 0 0.15em;
+}
+
+.mismatch-list {
+  margin: 0.5rem 0 0;
+  padding-inline-start: 1.25rem;
+  font-size: 0.95rem;
+}
+
+.mismatch-list li {
+  margin-bottom: 0.25rem;
+  color: var(--text-muted);
+}
+
+.mismatch-list .mismatch-current {
+  color: #c62828;
+  font-weight: 600;
+}
+
 .reader-progress {
   margin-bottom: 1rem;
 }

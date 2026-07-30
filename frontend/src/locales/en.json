@@ -50,6 +50,7 @@
     "expected": "Expected:",
     "heard": "Heard:",
     "mismatchHint": "Listen, try again, or continue.",
+    "moreMismatchesAhead": "More misspelled words are highlighted — keep reading to reach them.",
     "hearWord": "Hear word",
     "hearFullPage": "Hear full page",
     "wordClipUnavailable": "Word clip unavailable — use full page audio.",
