@@ -36,6 +36,14 @@ Live next to the code in **[src/api/](../src/api/README.md)**.
 | [development.md](development.md) | Env vars, local run, Docker |
 | [../src/bq/POOL_DOCUMENTATION.md](../src/bq/POOL_DOCUMENTATION.md) | BigQuery pool internals |
 
+## POC & stakeholders
+
+| Doc | Contents |
+|-----|----------|
+| [POC_WRITEUP.md](POC_WRITEUP.md) | POC features, decisions, success metrics |
+| [STAKEHOLDER_EVAL_SUMMARY.md](STAKEHOLDER_EVAL_SUMMARY.md) | Eval results explained for leadership; roadmap (VAD, fine-tuning) |
+| [../eval/README.md](../eval/README.md) | STT evaluation harness (Colab / local) |
+
 ## Root
 
 **[../README.md](../README.md)** — project overview and doc map.
